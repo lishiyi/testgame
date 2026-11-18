@@ -183,6 +183,7 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     getScoreForLevel,
     getLevelForScore,
     getRocksForLevel,
+    getRockDripInterval,
     getMaxObstacles,
     getPowerUpCooldown,
     isPowerUpEligible,
@@ -261,6 +262,47 @@ assert.strictEqual(g.getRocksForLevel(4), 2);
 assert.strictEqual(g.getRocksForLevel(5), 3);
 assert.strictEqual(g.getRocksForLevel(10), 4);
 assert.strictEqual(g.getRocksForLevel(15), 5);
+
+// 定时落石：Lv.1–2 不落石，Lv.3–9 每 12s，Lv.10–14 每 9s，Lv.15+ 每 7s
+assert.strictEqual(g.getRockDripInterval(1), 0);
+assert.strictEqual(g.getRockDripInterval(2), 0);
+assert.strictEqual(g.getRockDripInterval(3), 12);
+assert.strictEqual(g.getRockDripInterval(9), 12);
+assert.strictEqual(g.getRockDripInterval(10), 9);
+assert.strictEqual(g.getRockDripInterval(14), 9);
+assert.strictEqual(g.getRockDripInterval(15), 7);
+assert.strictEqual(g.getRockDripInterval(25), 7);
+
+g.startGame();
+g.setTestState({ level: 2, powerUp: null });
+const dripBase = g.getSnapshot().obstacles.length;
+g.updateTimers(20);
+assert.strictEqual(g.getSnapshot().obstacles.length, dripBase, 'Lv.2 不应定时落石');
+
+g.startGame();
+g.setTestState({ level: 3 });
+const dripStart = g.getSnapshot().obstacles.length;
+g.updateTimers(11.9);
+assert.strictEqual(g.getSnapshot().obstacles.length, dripStart, '12s 未到不应落石');
+g.updateTimers(0.2);
+const afterDrip = g.getSnapshot().obstacles;
+assert.strictEqual(afterDrip.length, dripStart + 1, 'Lv.3 满 12s 应落下 1 块石头');
+const dripRock = afterDrip[afterDrip.length - 1];
+assert(dripRock.warnTimer > 0, '定时落石应带红色预警');
+const dripHead = g.getSnapshot().snake[0];
+assert(Math.abs(dripRock.x - dripHead.x) + Math.abs(dripRock.y - dripHead.y) >= 5, '定时落石需距蛇头 ≥5 格');
+
+g.startGame();
+g.setTestState({ level: 3, freezeTimer: 30 });
+const frozenStart = g.getSnapshot().obstacles.length;
+g.updateTimers(13);
+assert.strictEqual(g.getSnapshot().obstacles.length, frozenStart, '时停期间不计时落石');
+
+g.startGame();
+const capRocks = Array.from({ length: 18 }, (_, i) => ({ x: (i % 9) * 2 + 1, y: Math.floor(i / 9) * 2 + 1, warnTimer: 0 }));
+g.setTestState({ level: 3, obstacles: capRocks });
+g.updateTimers(12.5);
+assert.strictEqual(g.getSnapshot().obstacles.length, 18, '达到上限后停止定时落石');
 
 // 达到满额 36 块后升级不再显示红色落石警示
 g.startGame();
@@ -684,5 +726,5 @@ g.checkLevelUp();
   assert(env.getClipboardText().includes('恭喜通关'), '复制战绩文本应包含通关信息');
   g.gameLoop(1500);
   assert.strictEqual(env.getSaveDepth(), 0, 'Canvas save/restore 深度必须归零');
-  console.log('✓ 全部仓库模块自动化回归测试通过！（分段升级门槛 + 9项数值与UI优化）');
+  console.log('✓ 全部仓库模块自动化回归测试通过！（分段升级门槛 + 9项数值与UI优化 + 定时落石）');
 })();

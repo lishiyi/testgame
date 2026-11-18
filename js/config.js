@@ -146,6 +146,15 @@ function getRocksForLevel(lv) {
   return 2;
 }
 
+// 定时落石间隔（秒）：Lv.1–2 不落石，Lv.3–9 每 12s，Lv.10–14 每 9s，Lv.15+ / 无尽每 7s
+// 返回 0 表示当前关卡不触发定时落石；落石同样受 getMaxObstacles 上限约束
+function getRockDripInterval(lv) {
+  if (lv >= 15) return 7;
+  if (lv >= 10) return 9;
+  if (lv >= 3) return 12;
+  return 0;
+}
+
 // 随关卡动态增长的碎石数量上限：Lv.1–7 为 18，Lv.8 起每级上限 +1，最高 36（Lv.25 封顶）
 function getMaxObstacles(lv) {
   return Math.min(

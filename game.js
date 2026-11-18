@@ -46,6 +46,7 @@ let invulnTimer = 0;
 let bannerTimer = 0;
 let shakeTimer = 0;
 let hitstopTimer = 0;
+let rockDripTimer = 0; // 定时落石累计计时（秒）
 
 let comboCount = 0;
 let comboTimer = 0;
@@ -428,6 +429,7 @@ function checkLevelUp() {
         }
       }
     }
+    rockDripTimer = 0; // 升级落石后重新计时，避免与定时落石连续叠加
 
     if (hasLevelFreeze) {
       freezeTimer = LEVEL_FREEZE_DURATION;
@@ -590,6 +592,7 @@ function initGameData() {
   bannerTimer = 0;
   shakeTimer = 0;
   hitstopTimer = 0;
+  rockDripTimer = 0;
   comboCount = 0;
   comboTimer = 0;
 
@@ -1294,6 +1297,18 @@ function updateTimers(dtSeconds) {
   }
 
   if (!isWorldFrozen) {
+    // 定时落石：时停期间暂停计时；复用升级落石的公平性规则与动态上限，达到上限即不再落石
+    const dripInterval = getRockDripInterval(level);
+    if (dripInterval > 0) {
+      rockDripTimer += dtSeconds;
+      if (rockDripTimer >= dripInterval) {
+        rockDripTimer = 0;
+        spawnLevelObstacles(1, level);
+      }
+    } else {
+      rockDripTimer = 0;
+    }
+
     for (const obs of obstacles) {
       if (obs.warnTimer > 0) {
         obs.warnTimer -= dtSeconds;
