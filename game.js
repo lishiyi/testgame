@@ -38,6 +38,7 @@ let lastPowerUpType = null;
 let obstacles = [];
 
 let iceTimer = 0;
+let doubleTimer = 0;
 let shieldTimer = 0;
 let ghostTimer = 0;
 let freezeTimer = 0;
@@ -152,7 +153,7 @@ const UPGRADE_POOL = [
       const removeCount = cleared.length;
       cleared.forEach((rock) => spawnBurst(rock.x, rock.y, '32, 22%, 62%', 10));
       rocksSmashed += removeCount;
-      score += removeCount * 5;
+      score += calcDoublePts(removeCount * 5);
       shakeTimer = Math.max(shakeTimer, 0.14);
       triggerHaptic(16);
       playTone('smash');
@@ -176,7 +177,7 @@ const UPGRADE_POOL = [
     id: 'buff_extend',
     name: '延时充能',
     rarity: 'uncommon',
-    getDesc: () => '护盾、寒冰与幽灵持续时间永久 +2.5 秒，场上道具停留更久',
+    getDesc: () => '护盾、寒冰、双倍与幽灵持续时间永久 +2.5 秒，场上道具停留更久',
     canPick: () => buffBonusSec < 7.5,
     apply: () => {
       buffBonusSec += 2.5;
@@ -572,6 +573,7 @@ function initGameData() {
 
   recalcBaseInterval();
   iceTimer = 0;
+  doubleTimer = 0;
   shieldTimer = 0;
   ghostTimer = 0;
   freezeTimer = 0;
@@ -818,6 +820,9 @@ function renderBuffBar() {
   if (freezeTimer > 0) {
     pills.push(`<span class="buff-pill" style="border-color: hsl(202, 92%, 60%); color: hsl(202, 98%, 80%);">时停 ${freezeTimer.toFixed(1)}s</span>`);
   }
+  if (doubleTimer > 0) {
+    pills.push(`<span class="buff-pill" style="border-color: hsl(54, 96%, 54%); color: hsl(56, 100%, 76%);">✨ 双倍 ${doubleTimer.toFixed(1)}s</span>`);
+  }
   if (shieldTimer > 0) {
     pills.push(`<span class="buff-pill" style="border-color: hsl(164, 78%, 45%); color: hsl(164, 88%, 72%);">护盾 ${shieldTimer.toFixed(1)}s</span>`);
   }
@@ -958,6 +963,10 @@ function queueDirection(nextDir) {
   }
 }
 
+function calcDoublePts(pts) {
+  return doubleTimer > 0 ? pts * 2 : pts;
+}
+
 function registerComboBonus() {
   if (comboUpgradeLevel <= 0) return 0;
   comboCount = Math.min(8, comboCount + 1);
@@ -974,27 +983,33 @@ function applyPowerUp(item) {
   if (item.type === 'heart') {
     playTone('heal');
     lives = Math.min(maxLives, lives + 1);
-    score += 10;
+    score += calcDoublePts(10);
     spawnBurst(item.x, item.y, '345, 92%, 64%', 14);
     addFloatingText(item.x, item.y, '+1 生命!', 'hsl(345, 96%, 74%)');
   } else if (item.type === 'gold') {
     playTone('powerup');
     const comboBonus = registerComboBonus();
-    const pts = Math.round(30 * scoreMultiplier) + comboBonus;
+    const pts = calcDoublePts(Math.round(30 * scoreMultiplier) + comboBonus);
     score += pts;
     pendingGrowth += 2;
     spawnBurst(item.x, item.y, '43, 96%, 58%', 14);
     addFloatingText(item.x, item.y, `+${pts} 金果!`, 'hsl(43, 96%, 64%)');
+  } else if (item.type === 'double') {
+    playTone('powerup');
+    score += calcDoublePts(10);
+    doubleTimer = Math.max(doubleTimer, POWERUP_TYPES.double.duration + buffBonusSec);
+    spawnBurst(item.x, item.y, '55, 100%, 62%', 15);
+    addFloatingText(item.x, item.y, '✨ 双倍得分!', 'hsl(56, 100%, 74%)');
   } else if (item.type === 'ice') {
     playTone('powerup');
-    score += 10;
+    score += calcDoublePts(10);
     iceTimer = POWERUP_TYPES.ice.duration + buffBonusSec;
     pendingGrowth += 1;
     spawnBurst(item.x, item.y, '196, 90%, 64%', 12);
     addFloatingText(item.x, item.y, '寒冰减速!', 'hsl(196, 92%, 72%)');
   } else if (item.type === 'shield') {
     playTone('powerup');
-    score += 10;
+    score += calcDoublePts(10);
     shieldTimer = POWERUP_TYPES.shield.duration + buffBonusSec;
     pendingGrowth += 1;
     spawnBurst(item.x, item.y, '164, 85%, 56%', 12);
@@ -1002,7 +1017,7 @@ function applyPowerUp(item) {
   } else if (item.type === 'bomb') {
     playTone('bomb');
     const cleared = clearObstaclesNear(snake[0].x, snake[0].y, 5);
-    const pts = 10 + cleared * 5;
+    const pts = calcDoublePts(10 + cleared * 5);
     score += pts;
     shakeTimer = Math.max(shakeTimer, 0.2);
     triggerHaptic([25, 20, 35]);
@@ -1010,7 +1025,7 @@ function applyPowerUp(item) {
     addFloatingText(
       item.x,
       item.y,
-      cleared > 0 ? `爆破 ${cleared} 石 +${pts}!` : '11×11 爆破 +10!',
+      cleared > 0 ? `爆破 ${cleared} 石 +${pts}!` : `11×11 爆破 +${pts}!`,
       'hsl(24, 98%, 68%)'
     );
   } else if (item.type === 'scissors') {
@@ -1018,19 +1033,19 @@ function applyPowerUp(item) {
     const targetLen = Math.max(3, snake.length - 5);
     const removed = snake.splice(targetLen);
     pendingGrowth = 0;
-    score += 15;
+    score += calcDoublePts(15);
     removed.forEach((seg) => spawnBurst(seg.x, seg.y, '220, 88%, 58%', 5));
     spawnBurst(item.x, item.y, '220, 88%, 58%', 12);
     addFloatingText(item.x, item.y, `剪短 -${removed.length} 节!`, 'hsl(220, 92%, 70%)');
   } else if (item.type === 'ghost') {
     playTone('powerup');
-    score += 10;
+    score += calcDoublePts(10);
     ghostTimer = Math.max(ghostTimer, POWERUP_TYPES.ghost.duration + buffBonusSec);
     spawnBurst(item.x, item.y, '258, 90%, 76%', 14);
     addFloatingText(item.x, item.y, '幽灵穿身!', 'hsl(258, 95%, 82%)');
   } else if (item.type === 'chest') {
     playTone('upgrade');
-    score += 20;
+    score += calcDoublePts(20);
     triggerChestModal = true;
     spawnBurst(item.x, item.y, '32, 98%, 60%', 18);
     addFloatingText(item.x, item.y, '🎁 开启神秘宝箱!', 'hsl(34, 100%, 74%)');
@@ -1117,12 +1132,13 @@ function stepGame() {
       const rock = obstacles[hitRockIndex];
       obstacles.splice(hitRockIndex, 1);
       rocksSmashed += 1;
-      score += 5;
+      const smashPts = calcDoublePts(5);
+      score += smashPts;
       shakeTimer = Math.max(shakeTimer, 0.1);
       triggerHaptic(14);
       playTone('smash');
       spawnBurst(rock.x, rock.y, '32, 18%, 62%', 12);
-      addFloatingText(rock.x, rock.y, '碎石 +5', 'hsl(164, 85%, 68%)');
+      addFloatingText(rock.x, rock.y, `碎石 +${smashPts}`, 'hsl(164, 85%, 68%)');
       checkLevelUp();
       updateHUD();
       if (state !== 'running') return;
@@ -1160,12 +1176,14 @@ function stepGame() {
 
   if (willEatFood) {
     const comboBonus = registerComboBonus();
-    const pts = Math.round(10 * scoreMultiplier) + comboBonus;
+    const pts = calcDoublePts(Math.round(10 * scoreMultiplier) + comboBonus);
     score += pts;
     playTone('eat');
     spawnBurst(food.x, food.y, '16, 90%, 62%', 10);
     if (comboBonus > 0) {
       addFloatingText(food.x, food.y, `连击x${comboCount} +${pts}`, 'hsl(46, 100%, 70%)');
+    } else if (doubleTimer > 0) {
+      addFloatingText(food.x, food.y, `✨ +${pts}`, 'hsl(55, 100%, 72%)');
     } else if (pts > 10) {
       addFloatingText(food.x, food.y, `+${pts}`, 'hsl(43, 96%, 68%)');
     }
@@ -1211,6 +1229,11 @@ function updateTimers(dtSeconds) {
 
   if (iceTimer > 0) {
     iceTimer = Math.max(0, iceTimer - dtSeconds);
+    buffChanged = true;
+  }
+
+  if (doubleTimer > 0) {
+    doubleTimer = Math.max(0, doubleTimer - dtSeconds);
     buffChanged = true;
   }
 

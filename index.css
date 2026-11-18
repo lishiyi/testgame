@@ -168,10 +168,10 @@ body {
   line-height: 1.35;
 }
 
-/* Item Legend (8 items, 4x2 grid with unlock status) */
+/* Item Legend (9 items, 3x3 grid with unlock status) */
 .item-legend {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px 8px;
   padding: 7px 10px;
   background-color: var(--bg-board);
@@ -210,6 +210,14 @@ body {
 
 .dot-gold {
   background-color: var(--accent-gold);
+}
+
+.dot-double {
+  width: 9px;
+  height: 9px;
+  border-radius: 0;
+  background-color: hsl(55, 100%, 58%);
+  clip-path: polygon(50% 0%, 66% 34%, 100% 50%, 66% 66%, 50% 100%, 34% 66%, 0% 50%, 34% 34%);
 }
 
 .dot-ice {

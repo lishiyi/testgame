@@ -184,7 +184,7 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     renderScene,
     getSnapshot: () => JSON.parse(JSON.stringify({
       state, level, endlessMode, score, lives, maxLives, scoreMultiplier, baseStepInterval,
-      snake, obstacles, food, powerUp, lastPowerUpType, invulnTimer, shieldTimer, ghostTimer, freezeTimer,
+      snake, obstacles, food, powerUp, lastPowerUpType, invulnTimer, doubleTimer, shieldTimer, ghostTimer, freezeTimer,
       comboCount, comboTimer, hasPhaseBody, hasLevelFreeze,
       nirvanaCharges, nirvanaUsed, shakeTimer, hitstopTimer,
       rocksSmashed, runElapsedSec, pickedUpgrades
@@ -198,6 +198,7 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
       if (patch.score !== undefined) score = patch.score;
       if (patch.lives !== undefined) lives = patch.lives;
       if (patch.maxLives !== undefined) maxLives = patch.maxLives;
+      if (patch.doubleTimer !== undefined) doubleTimer = patch.doubleTimer;
       if (patch.shieldTimer !== undefined) shieldTimer = patch.shieldTimer;
       if (patch.ghostTimer !== undefined) ghostTimer = patch.ghostTimer;
       if (patch.freezeTimer !== undefined) freezeTimer = patch.freezeTimer;
@@ -275,11 +276,11 @@ g.stepGame();
 snap = g.getSnapshot();
 assert.deepStrictEqual(snap.snake[0], { x: 0, y: 10 }, '护盾激活时应可穿墙');
 
-// 5. 校验 8 种道具等级解锁表（1, 2, 3, 4, 6, 8, 10, 12）与防连续重复生成
+// 5. 校验 9 种道具等级解锁表（1, 2, 3, 4, 5, 6, 8, 10, 12）与防连续重复生成
 assert.deepStrictEqual(
   Object.fromEntries(Object.entries(g.POWERUP_TYPES).map(([k, v]) => [k, v.unlockLevel])),
-  { gold: 1, bomb: 2, shield: 3, heart: 4, ice: 6, scissors: 8, ghost: 10, chest: 12 },
-  '8 种道具解锁关卡应符合 1/2/3/4/6/8/10/12 新设定（炸弹2级、寒冰6级）'
+  { gold: 1, bomb: 2, double: 3, shield: 4, heart: 5, ice: 6, scissors: 8, ghost: 10, chest: 12 },
+  '9 种道具解锁关卡应符合 1/2/3/4/5/6/8/10/12 新设定（双倍3级、护盾4级、生命5级）'
 );
 g.startGame();
 g.setTestState({
@@ -291,11 +292,14 @@ assert.strictEqual(g.isPowerUpEligible('gold'), true);
 assert.strictEqual(g.isPowerUpEligible('bomb'), false);
 g.setTestState({ level: 2 });
 assert.strictEqual(g.isPowerUpEligible('bomb'), true);
-assert.strictEqual(g.isPowerUpEligible('shield'), false);
+assert.strictEqual(g.isPowerUpEligible('double'), false);
 g.setTestState({ level: 3 });
+assert.strictEqual(g.isPowerUpEligible('double'), true);
+assert.strictEqual(g.isPowerUpEligible('shield'), false);
+g.setTestState({ level: 4 });
 assert.strictEqual(g.isPowerUpEligible('shield'), true);
 assert.strictEqual(g.isPowerUpEligible('heart'), false);
-g.setTestState({ level: 4 });
+g.setTestState({ level: 5 });
 assert.strictEqual(g.isPowerUpEligible('heart'), true);
 assert.strictEqual(g.isPowerUpEligible('ice'), false);
 g.setTestState({ level: 6 });
@@ -360,11 +364,11 @@ assert(
   '蒙特卡洛单卡抽中率应满足 传说 < 稀有 < 罕见 < 普通'
 );
 
-// 校验 8 种道具刷新权重
+// 校验 9 种道具刷新权重
 assert.deepStrictEqual(
   Object.fromEntries(Object.entries(g.POWERUP_TYPES).map(([k, v]) => [k, v.weight])),
-  { gold: 25, bomb: 20, shield: 20, heart: 12, ice: 20, scissors: 15, ghost: 15, chest: 8 },
-  '8 种道具权重应符合最新数值配置'
+  { gold: 25, bomb: 20, double: 18, shield: 20, heart: 12, ice: 20, scissors: 15, ghost: 15, chest: 8 },
+  '9 种道具权重应符合最新数值配置'
 );
 
 // 校验「强健体魄」罕见、「圣盾赐福」普通、「黄金胃口」+50%、「断尾瘦身」40%、「从容步伐」0.20 与「碎石冲击」全屏震碎
@@ -561,11 +565,28 @@ assert(env.getEl('upgrade-badge').textContent.includes('神秘宝箱'), '弹窗�
 g.selectUpgrade(0);
 assert.strictEqual(g.getSnapshot().state, 'paused', '选择宝箱强化后应自动触发安全暂停');
 
-// 9. 校验全部 8 种道具与冻结特效的 Canvas 绘制栈平衡
+// 8e. ✨ 双倍得分 (double)
+g.startGame();
+g.setTestState({
+  snake: [{ x: 8, y: 10 }, { x: 7, y: 10 }, { x: 6, y: 10 }],
+  direction: { x: 1, y: 0 },
+  obstacles: [],
+  powerUp: { x: 9, y: 10, type: 'double', ttl: 8, maxTtl: 9.5 },
+  food: { x: 10, y: 10 }
+});
+g.stepGame(); // 走到 (9,10) 拾取双倍得分：+10 分，激活 8.0s 双倍
+assert.strictEqual(g.getSnapshot().score, 10, '首次拾取双倍得分应获得基础 +10 分');
+assert.strictEqual(g.getSnapshot().doubleTimer, 8.0, '拾取双倍得分应激活 8.0s 持续时间');
+assert(env.getEl('buff-bar').innerHTML.includes('双倍'), 'Buff 栏应显示双倍得分状态胶囊');
+g.stepGame(); // 走到 (10,10) 在双倍期间吃普通果实：10 * 2 = +20 分（总分 30）
+assert.strictEqual(g.getSnapshot().score, 30, '双倍得分激活期间吃普通果实应获得 +20 分');
+
+// 9. 校验全部 9 种道具与冻结特效的 Canvas 绘制栈平衡
 g.startGame();
 for (const type of Object.keys(g.POWERUP_TYPES)) {
   g.setTestState({
     freezeTimer: 1.5,
+    doubleTimer: 3.0,
     ghostTimer: 2.0,
     powerUp: { x: 10, y: 10, type, ttl: 6, maxTtl: 9.5 }
   });
@@ -605,5 +626,5 @@ g.checkLevelUp();
   assert(env.getClipboardText().includes('恭喜通关'), '复制战绩文本应包含通关信息');
   g.gameLoop(1500);
   assert.strictEqual(env.getSaveDepth(), 0, 'Canvas save/restore 深度必须归零');
-  console.log('✓ 全部仓库模块自动化回归测试通过！（9x9 炸弹 + 18+(lv-7) 碎石上限 + 20关无尽模式）');
+  console.log('✓ 全部仓库模块自动化回归测试通过！（9种道具含Lv.3双倍得分 + 11x11炸弹 + 20关无尽模式）');
 })();

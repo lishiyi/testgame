@@ -148,6 +148,43 @@ function drawPowerUp(timestamp) {
     ctx.beginPath();
     ctx.arc(cx - r * 0.28, cy - r * 0.28, r * 0.28, 0, Math.PI * 2);
     ctx.fill();
+  } else if (powerUp.type === 'double') {
+    // 双倍得分：亮金四角主星芒 + 右上副星芒
+    const r = CELL_SIZE * 0.33 * pulse;
+    const inner = r * 0.34;
+    ctx.fillStyle = 'hsl(55, 100%, 58%)';
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const ang = -Math.PI / 2 + (Math.PI / 4) * i;
+      const rad = i % 2 === 0 ? r : inner;
+      const px = cx - 0.8 + Math.cos(ang) * rad;
+      const py = cy + 0.6 + Math.sin(ang) * rad;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = 'hsla(60, 100%, 94%, 0.9)';
+    ctx.beginPath();
+    ctx.arc(cx - 0.8, cy + 0.6, r * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+
+    const sr = CELL_SIZE * 0.14 * pulse;
+    const sx = cx + r * 0.58;
+    const sy = cy - r * 0.56;
+    ctx.fillStyle = 'hsl(50, 100%, 74%)';
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - sr);
+    ctx.lineTo(sx + sr * 0.35, sy - sr * 0.35);
+    ctx.lineTo(sx + sr, sy);
+    ctx.lineTo(sx + sr * 0.35, sy + sr * 0.35);
+    ctx.lineTo(sx, sy + sr);
+    ctx.lineTo(sx - sr * 0.35, sy + sr * 0.35);
+    ctx.lineTo(sx - sr, sy);
+    ctx.lineTo(sx - sr * 0.35, sy - sr * 0.35);
+    ctx.closePath();
+    ctx.fill();
   } else if (powerUp.type === 'ice') {
     const r = CELL_SIZE * 0.32 * pulse;
     ctx.fillStyle = 'hsl(196, 90%, 62%)';

@@ -24,7 +24,7 @@ const SHAKE_DURATION = 0.22;        // 受击屏幕震动持续时间 (秒)
 const HITSTOP_DURATION = 0.045;     // 拾取道具瞬间微顿帧时长 (秒)
 const STORAGE_KEY = 'classic_snake_best_score_v2';
 
-// 8 种场上随机道具配置（按关卡逐步解锁）
+// 9 种场上随机道具配置（按关卡逐步解锁）
 const POWERUP_TYPES = {
   gold: {
     label: '金果 +30',
@@ -42,10 +42,19 @@ const POWERUP_TYPES = {
     dotClass: 'dot-bomb',
     color: 'hsl(20, 95%, 58%)'
   },
+  double: {
+    label: '✨ 双倍得分',
+    shortLabel: '双倍',
+    unlockLevel: 3,
+    weight: 18,
+    dotClass: 'dot-double',
+    color: 'hsl(55, 100%, 58%)',
+    duration: 8.0
+  },
   shield: {
     label: '穿墙护盾',
     shortLabel: '护盾',
-    unlockLevel: 3,
+    unlockLevel: 4,
     weight: 20,
     dotClass: 'dot-shield',
     color: 'hsl(164, 82%, 50%)',
@@ -54,7 +63,7 @@ const POWERUP_TYPES = {
   heart: {
     label: '生命之心',
     shortLabel: '生命',
-    unlockLevel: 4,
+    unlockLevel: 5,
     weight: 12,
     dotClass: 'dot-heart',
     color: 'hsl(345, 92%, 64%)'
