@@ -363,7 +363,7 @@ assert(
 // 校验 8 种道具刷新权重
 assert.deepStrictEqual(
   Object.fromEntries(Object.entries(g.POWERUP_TYPES).map(([k, v]) => [k, v.weight])),
-  { gold: 26, bomb: 20, shield: 20, heart: 12, ice: 20, scissors: 15, ghost: 14, chest: 8 },
+  { gold: 25, bomb: 20, shield: 20, heart: 12, ice: 20, scissors: 15, ghost: 15, chest: 8 },
   '8 种道具权重应符合最新数值配置'
 );
 
@@ -493,22 +493,22 @@ assert.strictEqual(snap.obstacles.length, 0, '涅槃复活应震碎周围碎石'
 assert.strictEqual(nirvanaCard.canPick(), false, '本局已触发过涅槃后不可再次抽取');
 
 // 8. 校验新增 4 种场上道具：爆破炸弹、缩身剪刀、幽灵相位、神秘宝箱
-// 8a. 爆破炸弹 (bomb · 9x9 区域，半径 4)
+// 8a. 爆破炸弹 (bomb · 11x11 区域，半径 5)
 g.startGame();
 g.setTestState({
   snake: [{ x: 9, y: 10 }, { x: 8, y: 10 }, { x: 7, y: 10 }],
   direction: { x: 1, y: 0 },
   obstacles: [
     { x: 11, y: 10, warnTimer: 0 }, // 距离新蛇头 (10,10) 1 格 -> 炸毁
-    { x: 14, y: 14, warnTimer: 0 }, // 距离新蛇头 (10,10) 偏移 (4,4)，仍在 9x9 边缘 -> 炸毁
-    { x: 16, y: 10, warnTimer: 0 }  // 距离新蛇头 (10,10) 偏移 (6,0)，在 9x9 之外 -> 保留
+    { x: 15, y: 15, warnTimer: 0 }, // 距离新蛇头 (10,10) 偏移 (5,5)，仍在 11x11 边缘 -> 炸毁
+    { x: 16, y: 10, warnTimer: 0 }  // 距离新蛇头 (10,10) 偏移 (6,0)，在 11x11 之外 -> 保留
   ],
   powerUp: { x: 10, y: 10, type: 'bomb', ttl: 8, maxTtl: 9.5 },
   food: { x: 2, y: 2 }
 });
 g.stepGame();
 snap = g.getSnapshot();
-assert.strictEqual(snap.obstacles.length, 1, '爆破炸弹应清除蛇头周围 9x9 内碎石');
+assert.strictEqual(snap.obstacles.length, 1, '爆破炸弹应清除蛇头周围 11x11 内碎石');
 assert.strictEqual(snap.rocksSmashed, 2, '炸毁碎石应计入击碎数');
 assert.strictEqual(snap.score, 20, '爆破炸弹应获得 10 + 2*5 = 20 分');
 

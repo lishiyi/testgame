@@ -30,7 +30,7 @@ const POWERUP_TYPES = {
     label: '金果 +30',
     shortLabel: '金果',
     unlockLevel: 1,
-    weight: 26,
+    weight: 25,
     dotClass: 'dot-gold',
     color: 'hsl(43, 96%, 56%)'
   },
@@ -80,7 +80,7 @@ const POWERUP_TYPES = {
     label: '幽灵相位',
     shortLabel: '幽灵',
     unlockLevel: 10,
-    weight: 14,
+    weight: 15,
     dotClass: 'dot-ghost',
     color: 'hsl(258, 90%, 76%)',
     duration: 6.5

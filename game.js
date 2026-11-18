@@ -1001,7 +1001,7 @@ function applyPowerUp(item) {
     addFloatingText(item.x, item.y, '穿墙碎石护盾!', 'hsl(164, 90%, 66%)');
   } else if (item.type === 'bomb') {
     playTone('bomb');
-    const cleared = clearObstaclesNear(snake[0].x, snake[0].y, 4);
+    const cleared = clearObstaclesNear(snake[0].x, snake[0].y, 5);
     const pts = 10 + cleared * 5;
     score += pts;
     shakeTimer = Math.max(shakeTimer, 0.2);
@@ -1010,7 +1010,7 @@ function applyPowerUp(item) {
     addFloatingText(
       item.x,
       item.y,
-      cleared > 0 ? `爆破 ${cleared} 石 +${pts}!` : '9×9 爆破 +10!',
+      cleared > 0 ? `爆破 ${cleared} 石 +${pts}!` : '11×11 爆破 +10!',
       'hsl(24, 98%, 68%)'
     );
   } else if (item.type === 'scissors') {
