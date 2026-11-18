@@ -18,6 +18,7 @@ const overlayTitleEl = document.getElementById('overlay-title');
 const overlayDescEl = document.getElementById('overlay-desc');
 const overlayTipsEl = document.getElementById('overlay-tips');
 const runSummaryEl = document.getElementById('run-summary');
+const endlessBtn = document.getElementById('endless-btn');
 const startBtn = document.getElementById('start-btn');
 const shareBtn = document.getElementById('share-btn');
 const pauseBtn = document.getElementById('pause-btn');
@@ -55,6 +56,7 @@ let maxLives = INITIAL_LIVES;
 let lives = INITIAL_LIVES;
 let score = 0;
 let level = 1;
+let endlessMode = false;
 let bestScore = loadBestScore();
 
 // 肉鸽永久强化属性与单局统计（每局重置）
@@ -251,7 +253,10 @@ const UPGRADE_POOL = [
 // 辅助查询与隐藏速度计算
 // ------------------------------------------
 function recalcBaseInterval() {
-  const rawMult = 1 + (level - 1) * SPEED_GAIN_PER_LEVEL - slowUpgradeCount * SLOW_UPGRADE_STEP;
+  const levelGain =
+    Math.min(level - 1, 19) * SPEED_GAIN_PER_LEVEL +
+    Math.max(0, level - CLEAR_LEVEL) * 0.025;
+  const rawMult = Math.min(2.5, 1 + levelGain - slowUpgradeCount * SLOW_UPGRADE_STEP);
   const clampedMult = Math.max(MIN_SPEED_MULT, rawMult);
   baseStepInterval = Math.round(INITIAL_INTERVAL / clampedMult);
 }
@@ -386,13 +391,14 @@ function spawnLevelObstacles(count, lv = level) {
 }
 
 function checkLevelUp() {
-  const targetLevel = Math.min(CLEAR_LEVEL, Math.floor(score / POINTS_PER_LEVEL) + 1);
+  const rawTarget = Math.floor(score / POINTS_PER_LEVEL) + 1;
+  const targetLevel = endlessMode ? rawTarget : Math.min(CLEAR_LEVEL, rawTarget);
   if (targetLevel > level) {
     const prevLevel = level;
     level = targetLevel;
     recalcBaseInterval();
 
-    if (level >= CLEAR_LEVEL) {
+    if (!endlessMode && level >= CLEAR_LEVEL) {
       pendingUpgradeLevels = [];
       updateHUD();
       renderLegend();
@@ -402,10 +408,11 @@ function checkLevelUp() {
 
     let spawnedRocks = 0;
     const newlyUnlocked = [];
+    const hasAvailableUpgrade = UPGRADE_POOL.some((u) => u.canPick());
 
     for (let lv = prevLevel + 1; lv <= level; lv++) {
       spawnedRocks += spawnLevelObstacles(getRocksForLevel(lv), lv);
-      if (lv % UPGRADE_EVERY_LEVELS === 0) {
+      if (lv % UPGRADE_EVERY_LEVELS === 0 && hasAvailableUpgrade) {
         pendingUpgradeLevels.push(lv);
       }
       for (const cfg of Object.values(POWERUP_TYPES)) {
@@ -548,6 +555,7 @@ function initGameData() {
   lives = INITIAL_LIVES;
   score = 0;
   level = 1;
+  endlessMode = false;
 
   slowUpgradeCount = 0;
   scoreMultiplier = 1.0;
@@ -602,8 +610,37 @@ function startGame() {
   pauseBtn.textContent = '暂停';
   overlayTipsEl.classList.add('hidden');
   runSummaryEl.classList.add('hidden');
+  endlessBtn.classList.add('hidden');
   shareBtn.classList.add('hidden');
   overlayEl.classList.add('hidden');
+}
+
+function continueEndlessMode() {
+  if (state !== 'won' || endlessMode) return;
+  endlessMode = true;
+  state = 'running';
+  directionQueue = [];
+  stepAccumulator = 0;
+  lastFrameTime = performance.now();
+  invulnTimer = Math.max(invulnTimer, 2.0);
+  if (hasLevelFreeze) {
+    freezeTimer = Math.max(freezeTimer, LEVEL_FREEZE_DURATION);
+  }
+  if (!food) {
+    spawnFood();
+  }
+  pauseBtn.disabled = false;
+  pauseBtn.textContent = '暂停';
+  endlessBtn.classList.add('hidden');
+  shareBtn.classList.add('hidden');
+  runSummaryEl.classList.add('hidden');
+  overlayEl.classList.add('hidden');
+  showLevelBanner('无尽模式开启！向更高关卡冲刺');
+  if (snake.length > 0) {
+    addFloatingText(snake[0].x, snake[0].y, '∞ 无尽模式启动!', 'hsl(43, 98%, 70%)');
+  }
+  updateHUD();
+  renderBuffBar();
 }
 
 function pauseGame(
@@ -657,9 +694,12 @@ function renderRunSummary() {
 }
 
 function buildShareText() {
-  const statusLine = state === 'won'
-    ? `🐍 贪吃蛇·肉鸽挑战｜恭喜通关！(Lv.${level})`
-    : `🐍 贪吃蛇·肉鸽挑战｜闯关至 Lv.${level}`;
+  let statusLine = `🐍 贪吃蛇·肉鸽挑战｜闯关至 Lv.${level}`;
+  if (state === 'won') {
+    statusLine = `🐍 贪吃蛇·肉鸽挑战｜恭喜通关！(Lv.${level})`;
+  } else if (endlessMode) {
+    statusLine = `🐍 贪吃蛇·肉鸽挑战｜无尽模式止步 Lv.${level}`;
+  }
   const upgradeLine = pickedUpgrades.length > 0
     ? pickedUpgrades.map((u) => u.name).join(' / ')
     : '无';
@@ -733,23 +773,32 @@ function endGame(won = false) {
 
   if (won) {
     const desc = level >= CLEAR_LEVEL
-      ? `成功突破全部 ${CLEAR_LEVEL} 关挑战！本局得分 ${score} · 最高纪录 ${bestScore}`
+      ? `成功突破全部 ${CLEAR_LEVEL} 关挑战！本局得分 ${score} · 最高纪录 ${bestScore}，可选择继续无尽模式挑战极限！`
       : `成功占领全部棋盘格！本局得分 ${score} · 最高纪录 ${bestScore}`;
-    showOverlay('恭喜通关！', desc, '再来一局', { showTips: false, showSummary: true });
-  } else {
-    showOverlay('游戏结束', `闯至 Lv.${level} · 本局得分 ${score} · 最高纪录 ${bestScore}`, '再来一局', {
+    showOverlay('恭喜通关！', desc, '再来一局', {
       showTips: false,
-      showSummary: true
+      showSummary: true,
+      showEndless: !endlessMode
+    });
+  } else {
+    const desc = endlessMode
+      ? `无尽模式 · 止步 Lv.${level} · 本局得分 ${score} · 最高纪录 ${bestScore}`
+      : `闯至 Lv.${level} · 本局得分 ${score} · 最高纪录 ${bestScore}`;
+    showOverlay('游戏结束', desc, '再来一局', {
+      showTips: false,
+      showSummary: true,
+      showEndless: false
     });
   }
 }
 
-function showOverlay(title, desc, btnText, { showTips = false, showSummary = false } = {}) {
+function showOverlay(title, desc, btnText, { showTips = false, showSummary = false, showEndless = false } = {}) {
   overlayTitleEl.textContent = title;
   overlayDescEl.textContent = desc;
   startBtn.textContent = btnText;
   overlayTipsEl.classList.toggle('hidden', !showTips);
   runSummaryEl.classList.toggle('hidden', !showSummary);
+  endlessBtn.classList.toggle('hidden', !showEndless);
   shareBtn.classList.toggle('hidden', !showSummary);
   overlayEl.classList.remove('hidden');
 }
@@ -757,7 +806,7 @@ function showOverlay(title, desc, btnText, { showTips = false, showSummary = fal
 function updateHUD() {
   livesEl.textContent = '♥'.repeat(lives) + '♡'.repeat(Math.max(0, maxLives - lives));
   scoreEl.textContent = String(score);
-  levelEl.textContent = `Lv.${level}`;
+  levelEl.textContent = endlessMode ? `Lv.${level} ∞` : `Lv.${level}`;
   bestScoreEl.textContent = String(bestScore);
 }
 
@@ -955,16 +1004,16 @@ function applyPowerUp(item) {
     addFloatingText(item.x, item.y, '穿墙碎石护盾!', 'hsl(164, 90%, 66%)');
   } else if (item.type === 'bomb') {
     playTone('bomb');
-    const cleared = clearObstaclesNear(snake[0].x, snake[0].y, 2);
+    const cleared = clearObstaclesNear(snake[0].x, snake[0].y, 4);
     const pts = 10 + cleared * 5;
     score += pts;
-    shakeTimer = Math.max(shakeTimer, 0.18);
+    shakeTimer = Math.max(shakeTimer, 0.2);
     triggerHaptic([25, 20, 35]);
-    spawnBurst(item.x, item.y, '20, 96%, 60%', 16);
+    spawnBurst(item.x, item.y, '20, 96%, 60%', 18);
     addFloatingText(
       item.x,
       item.y,
-      cleared > 0 ? `爆破 ${cleared} 石 +${pts}!` : '爆破冲击 +10!',
+      cleared > 0 ? `爆破 ${cleared} 石 +${pts}!` : '9×9 爆破 +10!',
       'hsl(24, 98%, 68%)'
     );
   } else if (item.type === 'scissors') {
@@ -1329,6 +1378,7 @@ startBtn.addEventListener('click', () => {
   }
 });
 
+endlessBtn.addEventListener('click', continueEndlessMode);
 shareBtn.addEventListener('click', copyShareStats);
 pauseBtn.addEventListener('click', togglePause);
 

@@ -171,6 +171,7 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     isPowerUpEligible,
     pickWeightedUpgrades,
     startGame,
+    continueEndlessMode,
     stepGame,
     updateTimers,
     checkLevelUp,
@@ -180,8 +181,8 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     gameLoop,
     renderScene,
     getSnapshot: () => JSON.parse(JSON.stringify({
-      state, level, score, lives, maxLives, scoreMultiplier,
-      snake, obstacles, powerUp, lastPowerUpType, invulnTimer, shieldTimer, ghostTimer, freezeTimer,
+      state, level, endlessMode, score, lives, maxLives, scoreMultiplier,
+      snake, obstacles, food, powerUp, lastPowerUpType, invulnTimer, shieldTimer, ghostTimer, freezeTimer,
       comboCount, comboTimer, hasPhaseBody, hasLevelFreeze,
       nirvanaCharges, nirvanaUsed, shakeTimer, hitstopTimer,
       rocksSmashed, runElapsedSec, pickedUpgrades
@@ -189,6 +190,7 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     spawnPowerUp,
     setTestState: (patch) => {
       if (patch.level !== undefined) level = patch.level;
+      if (patch.endlessMode !== undefined) endlessMode = patch.endlessMode;
       if (patch.snake) snake = patch.snake;
       if (patch.direction) { direction = patch.direction; directionQueue = []; }
       if (patch.score !== undefined) score = patch.score;
@@ -211,13 +213,15 @@ vm.createContext(env.sandbox);
 vm.runInContext(combinedRepoCode, env.sandbox);
 const g = env.sandbox.__game;
 
-// 2. 校验动态碎石上限与阶梯增量
+// 2. 校验动态碎石上限（Lv.8 起按 18 + 1*(lv - 7) 提升至封顶 36）与阶梯增量
 assert.strictEqual(g.getMaxObstacles(1), 18);
 assert.strictEqual(g.getMaxObstacles(7), 18);
-assert.strictEqual(g.getMaxObstacles(8), 20);
-assert.strictEqual(g.getMaxObstacles(12), 28);
-assert.strictEqual(g.getMaxObstacles(16), 36);
-assert.strictEqual(g.getMaxObstacles(19), 36);
+assert.strictEqual(g.getMaxObstacles(8), 19);
+assert.strictEqual(g.getMaxObstacles(12), 23);
+assert.strictEqual(g.getMaxObstacles(16), 27);
+assert.strictEqual(g.getMaxObstacles(20), 31);
+assert.strictEqual(g.getMaxObstacles(25), 36);
+assert.strictEqual(g.getMaxObstacles(30), 36);
 assert.strictEqual(g.getRocksForLevel(4), 2);
 assert.strictEqual(g.getRocksForLevel(5), 3);
 assert.strictEqual(g.getRocksForLevel(10), 4);
@@ -451,22 +455,22 @@ assert.strictEqual(snap.obstacles.length, 0, '涅槃复活应震碎周围碎石'
 assert.strictEqual(nirvanaCard.canPick(), false, '本局已触发过涅槃后不可再次抽取');
 
 // 8. 校验新增 4 种场上道具：爆破炸弹、缩身剪刀、幽灵相位、神秘宝箱
-// 8a. 爆破炸弹 (bomb)
+// 8a. 爆破炸弹 (bomb · 9x9 区域，半径 4)
 g.startGame();
 g.setTestState({
   snake: [{ x: 9, y: 10 }, { x: 8, y: 10 }, { x: 7, y: 10 }],
   direction: { x: 1, y: 0 },
   obstacles: [
     { x: 11, y: 10, warnTimer: 0 }, // 距离新蛇头 (10,10) 1 格 -> 炸毁
-    { x: 12, y: 12, warnTimer: 0 }, // 距离新蛇头 (10,10) (2,2) -> 炸毁
-    { x: 16, y: 16, warnTimer: 0 }  // 远离 -> 保留
+    { x: 14, y: 14, warnTimer: 0 }, // 距离新蛇头 (10,10) 偏移 (4,4)，仍在 9x9 边缘 -> 炸毁
+    { x: 16, y: 10, warnTimer: 0 }  // 距离新蛇头 (10,10) 偏移 (6,0)，在 9x9 之外 -> 保留
   ],
   powerUp: { x: 10, y: 10, type: 'bomb', ttl: 8, maxTtl: 9.5 },
   food: { x: 2, y: 2 }
 });
 g.stepGame();
 snap = g.getSnapshot();
-assert.strictEqual(snap.obstacles.length, 1, '爆破炸弹应清除蛇头周围 5x5 内碎石');
+assert.strictEqual(snap.obstacles.length, 1, '爆破炸弹应清除蛇头周围 9x9 内碎石');
 assert.strictEqual(snap.rocksSmashed, 2, '炸毁碎石应计入击碎数');
 assert.strictEqual(snap.score, 20, '爆破炸弹应获得 10 + 2*5 = 20 分');
 
@@ -531,18 +535,37 @@ for (const type of Object.keys(g.POWERUP_TYPES)) {
   assert.strictEqual(env.getSaveDepth(), 0, `渲染道具 ${type} 后 Canvas save/restore 深度必须归零`);
 }
 
-// 10. 触发通关并验证结算摘要与复制战绩
+// 10. 触发通关并验证无尽模式入口与跨 20 关继续挑战
 g.startGame();
-g.setTestState({ score: 950 });
+g.setTestState({ score: 950, food: null });
 g.checkLevelUp(); // Lv.20 通关
 assert.strictEqual(g.getSnapshot().state, 'won');
 assert.strictEqual(env.getEl('run-summary').classList.contains('hidden'), false);
+assert.strictEqual(env.getEl('endless-btn').classList.contains('hidden'), false, 'Lv.20 通关应显示无尽模式按钮');
 assert.strictEqual(env.getEl('share-btn').classList.contains('hidden'), false);
+
+// 选择继续无尽模式：恢复 running、补全食物、HUD 显示 ∞、可继续升至 Lv.21+
+g.continueEndlessMode();
+snap = g.getSnapshot();
+assert.strictEqual(snap.state, 'running');
+assert.strictEqual(snap.endlessMode, true);
+assert(snap.food !== null, '进入无尽模式后必须确保场上存在食物');
+assert.strictEqual(env.getEl('level-value').textContent, 'Lv.20 ∞');
+assert.strictEqual(env.getEl('endless-btn').classList.contains('hidden'), true);
+g.setTestState({ score: 1050 });
+g.checkLevelUp();
+assert.strictEqual(g.getSnapshot().level, 22, '无尽模式应可继续突破 Lv.20 升级');
+assert.strictEqual(env.getEl('level-value').textContent, 'Lv.22 ∞');
+
+// 再次重置验证复制战绩
+g.startGame();
+g.setTestState({ score: 950 });
+g.checkLevelUp();
 
 (async () => {
   await g.copyShareStats();
   assert(env.getClipboardText().includes('恭喜通关'), '复制战绩文本应包含通关信息');
   g.gameLoop(1500);
   assert.strictEqual(env.getSaveDepth(), 0, 'Canvas save/restore 深度必须归零');
-  console.log('✓ 全部仓库模块自动化回归测试通过！（8 种解锁道具 + 12 张词条 + 传说稀有度）');
+  console.log('✓ 全部仓库模块自动化回归测试通过！（9x9 炸弹 + 18+(lv-7) 碎石上限 + 20关无尽模式）');
 })();

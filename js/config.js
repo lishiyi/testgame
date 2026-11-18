@@ -111,11 +111,11 @@ function getRocksForLevel(lv) {
   return 2;
 }
 
-// 随关卡动态增长的碎石数量上限：Lv.1–7 为 18，Lv.8 起每级上限 +2，最高 36
+// 随关卡动态增长的碎石数量上限：Lv.1–7 为 18，Lv.8 起每级上限 +1，最高 36（Lv.25 封顶）
 function getMaxObstacles(lv) {
   return Math.min(
     HARD_MAX_OBSTACLES,
-    Math.max(BASE_MAX_OBSTACLES, BASE_MAX_OBSTACLES + 2 * (lv - 7))
+    Math.max(BASE_MAX_OBSTACLES, BASE_MAX_OBSTACLES + (lv - 7))
   );
 }
 
