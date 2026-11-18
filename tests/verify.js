@@ -162,6 +162,7 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
   .map((rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8'))
   .join('\n') + `
   globalThis.__game = {
+    SPEED_GAIN_PER_LEVEL,
     POWERUP_TYPES,
     UPGRADE_POOL,
     RARITY_CONFIG,
@@ -358,12 +359,13 @@ assert(
   '蒙特卡洛单卡抽中率应满足 传说 < 稀有 < 罕见 < 普通'
 );
 
-// 校验「黄金胃口」+30% 与「断尾瘦身」40%
+// 校验「黄金胃口」+50% 与「断尾瘦身」40%
+assert.strictEqual(g.SPEED_GAIN_PER_LEVEL, 0.04, '每级速度提升应为 0.04');
 const scoreCard = g.UPGRADE_POOL.find((u) => u.id === 'score_boost');
-assert(scoreCard.getDesc().includes('+30%'), '黄金胃口描述应为 +30%');
+assert(scoreCard.getDesc().includes('+50%'), '黄金胃口描述应为 +50%');
 g.startGame();
 scoreCard.apply();
-assert.strictEqual(g.getSnapshot().scoreMultiplier, 1.3, '黄金胃口单次应提升至 1.3x');
+assert.strictEqual(g.getSnapshot().scoreMultiplier, 1.5, '黄金胃口单次应提升至 1.5x');
 
 const trimCard = g.UPGRADE_POOL.find((u) => u.id === 'trim_body');
 g.setTestState({ snake: Array.from({ length: 10 }, (_, i) => ({ x: 12 - i, y: 10 })) });
@@ -474,7 +476,7 @@ assert.strictEqual(snap.obstacles.length, 1, '爆破炸弹应清除蛇头周围 
 assert.strictEqual(snap.rocksSmashed, 2, '炸毁碎石应计入击碎数');
 assert.strictEqual(snap.score, 20, '爆破炸弹应获得 10 + 2*5 = 20 分');
 
-// 8b. 缩身剪刀 (scissors)
+// 8b. 缩身剪刀 (scissors · 减少 5 节)
 g.startGame();
 g.setTestState({
   snake: Array.from({ length: 8 }, (_, i) => ({ x: 9 - i, y: 10 })),
@@ -484,7 +486,7 @@ g.setTestState({
   food: { x: 2, y: 2 }
 });
 g.stepGame();
-assert.strictEqual(g.getSnapshot().snake.length, 4, '8 节蛇身吃到缩身剪刀应剪去 4 节剩 4 节');
+assert.strictEqual(g.getSnapshot().snake.length, 3, '8 节蛇身吃到缩身剪刀应剪去 5 节剩 3 节');
 
 // 8c. 幽灵相位道具 (ghost)
 g.startGame();

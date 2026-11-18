@@ -134,10 +134,10 @@ const UPGRADE_POOL = [
     id: 'score_boost',
     name: '黄金胃口',
     rarity: 'common',
-    getDesc: () => `苹果与金果得分永久 +30%（倍率 ${scoreMultiplier.toFixed(1)}x→${(scoreMultiplier + 0.3).toFixed(1)}x）`,
-    canPick: () => scoreMultiplier < 2.2,
+    getDesc: () => `苹果与金果得分永久 +50%（倍率 ${scoreMultiplier.toFixed(1)}x→${(scoreMultiplier + 0.5).toFixed(1)}x）`,
+    canPick: () => scoreMultiplier < 2.5,
     apply: () => {
-      scoreMultiplier = +(scoreMultiplier + 0.3).toFixed(1);
+      scoreMultiplier = +(scoreMultiplier + 0.5).toFixed(1);
       addFloatingText(snake[0].x, snake[0].y, `得分 ${scoreMultiplier.toFixed(1)}x!`, 'hsl(43, 96%, 64%)');
     }
   },
@@ -1018,7 +1018,7 @@ function applyPowerUp(item) {
     );
   } else if (item.type === 'scissors') {
     playTone('powerup');
-    const targetLen = Math.max(3, snake.length - 4);
+    const targetLen = Math.max(3, snake.length - 5);
     const removed = snake.splice(targetLen);
     pendingGrowth = 0;
     score += 15;
