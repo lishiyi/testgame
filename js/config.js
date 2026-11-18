@@ -34,20 +34,19 @@ const POWERUP_TYPES = {
     dotClass: 'dot-gold',
     color: 'hsl(43, 96%, 56%)'
   },
-  ice: {
-    label: '寒冰减速',
-    shortLabel: '寒冰',
+  bomb: {
+    label: '爆破炸弹',
+    shortLabel: '炸弹',
     unlockLevel: 2,
-    weight: 22,
-    dotClass: 'dot-ice',
-    color: 'hsl(196, 88%, 62%)',
-    duration: 6.0
+    weight: 20,
+    dotClass: 'dot-bomb',
+    color: 'hsl(20, 95%, 58%)'
   },
   shield: {
     label: '穿墙护盾',
     shortLabel: '护盾',
     unlockLevel: 3,
-    weight: 22,
+    weight: 20,
     dotClass: 'dot-shield',
     color: 'hsl(164, 82%, 50%)',
     duration: 7.5
@@ -60,13 +59,14 @@ const POWERUP_TYPES = {
     dotClass: 'dot-heart',
     color: 'hsl(345, 92%, 64%)'
   },
-  bomb: {
-    label: '爆破炸弹',
-    shortLabel: '炸弹',
+  ice: {
+    label: '寒冰减速',
+    shortLabel: '寒冰',
     unlockLevel: 6,
-    weight: 16,
-    dotClass: 'dot-bomb',
-    color: 'hsl(20, 95%, 58%)'
+    weight: 20,
+    dotClass: 'dot-ice',
+    color: 'hsl(196, 88%, 62%)',
+    duration: 6.0
   },
   scissors: {
     label: '缩身剪刀',

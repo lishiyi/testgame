@@ -278,8 +278,8 @@ assert.deepStrictEqual(snap.snake[0], { x: 0, y: 10 }, '护盾激活时应可穿
 // 5. 校验 8 种道具等级解锁表（1, 2, 3, 4, 6, 8, 10, 12）与防连续重复生成
 assert.deepStrictEqual(
   Object.fromEntries(Object.entries(g.POWERUP_TYPES).map(([k, v]) => [k, v.unlockLevel])),
-  { gold: 1, ice: 2, shield: 3, heart: 4, bomb: 6, scissors: 8, ghost: 10, chest: 12 },
-  '8 种道具解锁关卡应符合 1/2/3/4/6/8/10/12 设定'
+  { gold: 1, bomb: 2, shield: 3, heart: 4, ice: 6, scissors: 8, ghost: 10, chest: 12 },
+  '8 种道具解锁关卡应符合 1/2/3/4/6/8/10/12 新设定（炸弹2级、寒冰6级）'
 );
 g.startGame();
 g.setTestState({
@@ -288,18 +288,18 @@ g.setTestState({
   snake: Array.from({ length: 7 }, (_, i) => ({ x: 10 - i, y: 10 }))
 });
 assert.strictEqual(g.isPowerUpEligible('gold'), true);
-assert.strictEqual(g.isPowerUpEligible('ice'), false);
+assert.strictEqual(g.isPowerUpEligible('bomb'), false);
 g.setTestState({ level: 2 });
-assert.strictEqual(g.isPowerUpEligible('ice'), true);
+assert.strictEqual(g.isPowerUpEligible('bomb'), true);
 assert.strictEqual(g.isPowerUpEligible('shield'), false);
 g.setTestState({ level: 3 });
 assert.strictEqual(g.isPowerUpEligible('shield'), true);
 assert.strictEqual(g.isPowerUpEligible('heart'), false);
 g.setTestState({ level: 4 });
 assert.strictEqual(g.isPowerUpEligible('heart'), true);
-assert.strictEqual(g.isPowerUpEligible('bomb'), false);
+assert.strictEqual(g.isPowerUpEligible('ice'), false);
 g.setTestState({ level: 6 });
-assert.strictEqual(g.isPowerUpEligible('bomb'), true);
+assert.strictEqual(g.isPowerUpEligible('ice'), true);
 assert.strictEqual(g.isPowerUpEligible('scissors'), false);
 g.setTestState({ level: 8 });
 assert.strictEqual(g.isPowerUpEligible('scissors'), true);
@@ -363,7 +363,7 @@ assert(
 // 校验 8 种道具刷新权重
 assert.deepStrictEqual(
   Object.fromEntries(Object.entries(g.POWERUP_TYPES).map(([k, v]) => [k, v.weight])),
-  { gold: 26, ice: 22, shield: 22, heart: 12, bomb: 16, scissors: 15, ghost: 14, chest: 8 },
+  { gold: 26, bomb: 20, shield: 20, heart: 12, ice: 20, scissors: 15, ghost: 14, chest: 8 },
   '8 种道具权重应符合最新数值配置'
 );
 
