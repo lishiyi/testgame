@@ -33,6 +33,7 @@ let directionQueue = [];
 let food = { x: 14, y: 10 };
 let powerUp = null;
 let powerUpCooldown = 3.0;
+let lastPowerUpType = null;
 let obstacles = [];
 
 let iceTimer = 0;
@@ -582,6 +583,7 @@ function initGameData() {
   obstacles = createInitialObstacles();
   powerUp = null;
   powerUpCooldown = 3.0;
+  lastPowerUpType = null;
   particles = [];
   floatingTexts = [];
 
@@ -833,8 +835,11 @@ function spawnPowerUp() {
   const cells = findEmptyCells(true);
   if (cells.length === 0) return;
 
-  const candidates = Object.keys(POWERUP_TYPES).filter(isPowerUpEligible);
-  if (candidates.length === 0) return;
+  const eligible = Object.keys(POWERUP_TYPES).filter(isPowerUpEligible);
+  if (eligible.length === 0) return;
+
+  const nonRepeat = eligible.filter((key) => key !== lastPowerUpType);
+  const candidates = nonRepeat.length > 0 ? nonRepeat : eligible;
 
   const totalWeight = candidates.reduce((sum, key) => sum + POWERUP_TYPES[key].weight, 0);
   let roll = Math.random() * totalWeight;
@@ -850,6 +855,7 @@ function spawnPowerUp() {
   const pos = cells[Math.floor(Math.random() * cells.length)];
   const itemTtl = 9.5 + (buffBonusSec > 0 ? 2.0 : 0);
 
+  lastPowerUpType = pickedType;
   powerUp = {
     x: pos.x,
     y: pos.y,
@@ -967,9 +973,9 @@ function applyPowerUp(item) {
     const removed = snake.splice(targetLen);
     pendingGrowth = 0;
     score += 15;
-    removed.forEach((seg) => spawnBurst(seg.x, seg.y, '82, 84%, 60%', 5));
-    spawnBurst(item.x, item.y, '82, 86%, 62%', 12);
-    addFloatingText(item.x, item.y, `剪短 -${removed.length} 节!`, 'hsl(82, 90%, 70%)');
+    removed.forEach((seg) => spawnBurst(seg.x, seg.y, '220, 88%, 58%', 5));
+    spawnBurst(item.x, item.y, '220, 88%, 58%', 12);
+    addFloatingText(item.x, item.y, `剪短 -${removed.length} 节!`, 'hsl(220, 92%, 70%)');
   } else if (item.type === 'ghost') {
     playTone('powerup');
     score += 10;

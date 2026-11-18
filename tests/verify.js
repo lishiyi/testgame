@@ -181,11 +181,12 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     renderScene,
     getSnapshot: () => JSON.parse(JSON.stringify({
       state, level, score, lives, maxLives, scoreMultiplier,
-      snake, obstacles, invulnTimer, shieldTimer, ghostTimer, freezeTimer,
+      snake, obstacles, powerUp, lastPowerUpType, invulnTimer, shieldTimer, ghostTimer, freezeTimer,
       comboCount, comboTimer, hasPhaseBody, hasLevelFreeze,
       nirvanaCharges, nirvanaUsed, shakeTimer, hitstopTimer,
       rocksSmashed, runElapsedSec, pickedUpgrades
     })),
+    spawnPowerUp,
     setTestState: (patch) => {
       if (patch.level !== undefined) level = patch.level;
       if (patch.snake) snake = patch.snake;
@@ -199,6 +200,7 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
       if (patch.invulnTimer !== undefined) invulnTimer = patch.invulnTimer;
       if (patch.obstacles !== undefined) obstacles = patch.obstacles;
       if (patch.powerUp !== undefined) powerUp = patch.powerUp;
+      if (patch.lastPowerUpType !== undefined) lastPowerUpType = patch.lastPowerUpType;
       if (patch.food !== undefined) food = patch.food;
     }
   };
@@ -267,11 +269,11 @@ g.stepGame();
 snap = g.getSnapshot();
 assert.deepStrictEqual(snap.snake[0], { x: 0, y: 10 }, '护盾激活时应可穿墙');
 
-// 5. 校验 8 种道具等级解锁表与条件过滤
+// 5. 校验 8 种道具等级解锁表（1, 2, 3, 4, 6, 8, 10, 12）与防连续重复生成
 assert.deepStrictEqual(
   Object.fromEntries(Object.entries(g.POWERUP_TYPES).map(([k, v]) => [k, v.unlockLevel])),
-  { gold: 1, ice: 2, shield: 3, heart: 5, bomb: 7, scissors: 9, ghost: 11, chest: 13 },
-  '8 种道具解锁关卡应符合设定'
+  { gold: 1, ice: 2, shield: 3, heart: 4, bomb: 6, scissors: 8, ghost: 10, chest: 12 },
+  '8 种道具解锁关卡应符合 1/2/3/4/6/8/10/12 设定'
 );
 g.startGame();
 g.setTestState({
@@ -287,20 +289,37 @@ assert.strictEqual(g.isPowerUpEligible('shield'), false);
 g.setTestState({ level: 3 });
 assert.strictEqual(g.isPowerUpEligible('shield'), true);
 assert.strictEqual(g.isPowerUpEligible('heart'), false);
-g.setTestState({ level: 5 });
+g.setTestState({ level: 4 });
 assert.strictEqual(g.isPowerUpEligible('heart'), true);
 assert.strictEqual(g.isPowerUpEligible('bomb'), false);
-g.setTestState({ level: 7 });
+g.setTestState({ level: 6 });
 assert.strictEqual(g.isPowerUpEligible('bomb'), true);
 assert.strictEqual(g.isPowerUpEligible('scissors'), false);
-g.setTestState({ level: 9 });
+g.setTestState({ level: 8 });
 assert.strictEqual(g.isPowerUpEligible('scissors'), true);
 assert.strictEqual(g.isPowerUpEligible('ghost'), false);
-g.setTestState({ level: 11 });
+g.setTestState({ level: 10 });
 assert.strictEqual(g.isPowerUpEligible('ghost'), true);
 assert.strictEqual(g.isPowerUpEligible('chest'), false);
-g.setTestState({ level: 13 });
+g.setTestState({ level: 12 });
 assert.strictEqual(g.isPowerUpEligible('chest'), true);
+
+// 连续 100 次生成道具，校验不会连续两次出现同一种道具
+g.startGame();
+g.setTestState({
+  level: 12,
+  lives: 2,
+  snake: Array.from({ length: 8 }, (_, i) => ({ x: 10 - i, y: 10 })),
+  obstacles: [{ x: 2, y: 2, warnTimer: 0 }, { x: 17, y: 17, warnTimer: 0 }]
+});
+let prevType = null;
+for (let i = 0; i < 100; i++) {
+  g.setTestState({ powerUp: null });
+  g.spawnPowerUp();
+  const spawnedType = g.getSnapshot().powerUp.type;
+  assert.notStrictEqual(spawnedType, prevType, '不应连续两次生成同一种道具');
+  prevType = spawnedType;
+}
 
 // 6. 校验 12 张强化词条池、传说稀有度权重（稀有的一半）及核心数值
 assert.strictEqual(g.UPGRADE_POOL.length, 12, '词条池应扩展为 12 项');

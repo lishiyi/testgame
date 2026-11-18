@@ -204,24 +204,24 @@ function drawPowerUp(timestamp) {
     ctx.arc(cx + r * 1.15, cy - r * 0.85, sparkR, 0, Math.PI * 2);
     ctx.fill();
   } else if (powerUp.type === 'scissors') {
-    // 缩身剪刀：双交叉刀刃 + 双圆指环
+    // 缩身剪刀：深钴蓝双交叉刀刃 + 双圆指环
     ctx.save();
     ctx.translate(cx, cy);
     ctx.scale(pulse, pulse);
-    ctx.strokeStyle = 'hsl(82, 86%, 62%)';
-    ctx.lineWidth = 1.9;
+    ctx.strokeStyle = 'hsl(220, 82%, 48%)';
+    ctx.lineWidth = 2.2;
     ctx.beginPath();
-    ctx.moveTo(-4, 2.5);
-    ctx.lineTo(4.5, -5);
-    ctx.moveTo(4, 2.5);
-    ctx.lineTo(-4.5, -5);
+    ctx.moveTo(-4.2, 2.5);
+    ctx.lineTo(4.6, -5);
+    ctx.moveTo(4.2, 2.5);
+    ctx.lineTo(-4.6, -5);
     ctx.stroke();
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1.8;
     ctx.beginPath();
-    ctx.arc(-3.5, 4, 2.1, 0, Math.PI * 2);
+    ctx.arc(-3.5, 4, 2.2, 0, Math.PI * 2);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(3.5, 4, 2.1, 0, Math.PI * 2);
+    ctx.arc(3.5, 4, 2.2, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   } else if (powerUp.type === 'ghost') {

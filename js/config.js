@@ -55,7 +55,7 @@ const POWERUP_TYPES = {
   heart: {
     label: '生命之心',
     shortLabel: '生命',
-    unlockLevel: 5,
+    unlockLevel: 4,
     weight: 12,
     dotClass: 'dot-heart',
     color: 'hsl(345, 92%, 64%)'
@@ -63,7 +63,7 @@ const POWERUP_TYPES = {
   bomb: {
     label: '爆破炸弹',
     shortLabel: '炸弹',
-    unlockLevel: 7,
+    unlockLevel: 6,
     weight: 16,
     dotClass: 'dot-bomb',
     color: 'hsl(20, 95%, 58%)'
@@ -71,15 +71,15 @@ const POWERUP_TYPES = {
   scissors: {
     label: '缩身剪刀',
     shortLabel: '剪刀',
-    unlockLevel: 9,
+    unlockLevel: 8,
     weight: 15,
     dotClass: 'dot-scissors',
-    color: 'hsl(82, 84%, 58%)'
+    color: 'hsl(220, 82%, 48%)'
   },
   ghost: {
     label: '幽灵相位',
     shortLabel: '幽灵',
-    unlockLevel: 11,
+    unlockLevel: 10,
     weight: 11,
     dotClass: 'dot-ghost',
     color: 'hsl(258, 90%, 76%)',
@@ -88,7 +88,7 @@ const POWERUP_TYPES = {
   chest: {
     label: '神秘宝箱',
     shortLabel: '宝箱',
-    unlockLevel: 13,
+    unlockLevel: 12,
     weight: 5,
     dotClass: 'dot-chest',
     color: 'hsl(32, 98%, 56%)'
