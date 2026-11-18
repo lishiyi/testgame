@@ -146,6 +146,17 @@ function getRocksForLevel(lv) {
   return 2;
 }
 
+// 炸弹动态权重：以开局 4 块岩石为基准，每多 4 块岩石权重 +2，基础 14、最高 24
+const BOMB_WEIGHT_MAX = 24;
+function getBombDynamicWeight(rockCount) {
+  const extraSteps = Math.floor(Math.max(0, rockCount - 4) / 4);
+  return Math.min(BOMB_WEIGHT_MAX, POWERUP_TYPES.bomb.weight + extraSteps * 2);
+}
+
+// 「以石养身」：每累计碎 15 块岩石回复 1 点生命；满血时改为获得 3 秒护盾
+const STONE_FEAST_THRESHOLD = 15;
+const STONE_FEAST_SHIELD_SEC = 3.0;
+
 // 定时落石间隔（秒）：Lv.1–2 不落石，Lv.3–9 每 12s，Lv.10–14 每 9s，Lv.15+ / 无尽每 7s
 // 返回 0 表示当前关卡不触发定时落石；落石同样受 getMaxObstacles 上限约束
 function getRockDripInterval(lv) {

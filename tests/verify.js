@@ -184,6 +184,10 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     getLevelForScore,
     getRocksForLevel,
     getRockDripInterval,
+    getBombDynamicWeight,
+    getPowerUpWeight,
+    registerRocksSmashed,
+    applyPowerUp,
     getMaxObstacles,
     getPowerUpCooldown,
     isPowerUpEligible,
@@ -203,7 +207,8 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
       snake, obstacles, food, powerUp, lastPowerUpType, invulnTimer, doubleTimer, shieldTimer, ghostTimer, freezeTimer,
       comboCount, comboTimer, hasPhaseBody, hasLevelFreeze,
       nirvanaCharges, nirvanaUsed, shakeTimer, hitstopTimer,
-      rocksSmashed, runElapsedSec, pickedUpgrades
+      rocksSmashed, runElapsedSec, pickedUpgrades,
+      blastExpertLevel, hasStoneFeast, stoneFeastProgress
     })),
     spawnPowerUp,
     setTestState: (patch) => {
@@ -223,6 +228,12 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
       if (patch.powerUp !== undefined) powerUp = patch.powerUp;
       if (patch.lastPowerUpType !== undefined) lastPowerUpType = patch.lastPowerUpType;
       if (patch.food !== undefined) food = patch.food;
+      if (patch.blastExpertLevel !== undefined) blastExpertLevel = patch.blastExpertLevel;
+      if (patch.hasStoneFeast !== undefined) hasStoneFeast = patch.hasStoneFeast;
+      if (patch.stoneFeastProgress !== undefined) stoneFeastProgress = patch.stoneFeastProgress;
+      if (patch.comboUpgradeLevel !== undefined) comboUpgradeLevel = patch.comboUpgradeLevel;
+      if (patch.comboCount !== undefined) comboCount = patch.comboCount;
+      if (patch.comboTimer !== undefined) comboTimer = patch.comboTimer;
     }
   };
 `;
@@ -408,8 +419,8 @@ for (let i = 0; i < 100; i++) {
   prevType = spawnedType;
 }
 
-// 6. 校验 12 张强化词条池、传说稀有度权重（稀有的一半）及核心数值
-assert.strictEqual(g.UPGRADE_POOL.length, 12, '词条池应扩展为 12 项');
+// 6. 校验 14 张强化词条池、传说稀有度权重（稀有的一半）及核心数值
+assert.strictEqual(g.UPGRADE_POOL.length, 14, '词条池应扩展为 14 项');
 assert.strictEqual(g.RARITY_CONFIG.legendary.weight * 2, g.RARITY_CONFIG.rare.weight, '传说稀有度单卡权重应为稀有的一半');
 assert(
   g.RARITY_CONFIG.legendary.weight < g.RARITY_CONFIG.rare.weight &&
@@ -422,7 +433,7 @@ assert(
 g.startGame();
 g.setTestState({ snake: Array.from({ length: 8 }, (_, i) => ({ x: 10 - i, y: 10 })) });
 const pickCounts = { common: 0, uncommon: 0, rare: 0, legendary: 0 };
-const cardPoolCounts = { common: 5, uncommon: 4, rare: 2, legendary: 1 };
+const cardPoolCounts = { common: 5, uncommon: 5, rare: 3, legendary: 1 };
 for (let i = 0; i < 6000; i++) {
   for (const c of g.pickWeightedUpgrades(3)) {
     pickCounts[c.rarity]++;
@@ -447,6 +458,77 @@ assert.deepStrictEqual(
   { gold: 25, bomb: 14, double: 18, shield: 20, heart: 12, ice: 20, scissors: 15, ghost: 15, chest: 8 },
   '9 种道具权重应符合最新数值配置（炸弹权重 14）'
 );
+
+// 炸弹动态权重：以 4 块为基准，每多 4 块 +2，基础 14，最高 24
+assert.strictEqual(g.getBombDynamicWeight(0), 14);
+assert.strictEqual(g.getBombDynamicWeight(7), 14);
+assert.strictEqual(g.getBombDynamicWeight(8), 16);
+assert.strictEqual(g.getBombDynamicWeight(16), 20);
+assert.strictEqual(g.getBombDynamicWeight(24), 24);
+assert.strictEqual(g.getBombDynamicWeight(36), 24);
+const mkRocks = (n) => Array.from({ length: n }, (_, i) => ({ x: i % 20, y: 19 - Math.floor(i / 20), warnTimer: 0 }));
+g.startGame();
+g.setTestState({ obstacles: mkRocks(16), blastExpertLevel: 0 });
+assert.strictEqual(g.getPowerUpWeight('bomb'), 20);
+assert.strictEqual(g.getPowerUpWeight('gold'), 25);
+g.setTestState({ blastExpertLevel: 1 });
+assert.strictEqual(g.getPowerUpWeight('bomb'), 30, '爆破专家 Lv.1 炸弹权重 ×1.5');
+g.setTestState({ blastExpertLevel: 2 });
+assert.strictEqual(g.getPowerUpWeight('bomb'), 40, '爆破专家 Lv.2 炸弹权重 ×2');
+
+// 爆破专家：卡牌最多 2 层，炸弹每块额外 +5/层
+const blastCard = g.UPGRADE_POOL.find((u) => u.id === 'blast_expert');
+assert.strictEqual(blastCard.rarity, 'uncommon');
+g.startGame();
+blastCard.apply();
+blastCard.apply();
+assert.strictEqual(g.getSnapshot().blastExpertLevel, 2);
+assert.strictEqual(blastCard.canPick(), false, '爆破专家最多叠加 2 次');
+g.setTestState({
+  snake: [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }],
+  obstacles: [{ x: 12, y: 12, warnTimer: 0 }, { x: 7, y: 7, warnTimer: 0 }, { x: 0, y: 0, warnTimer: 0 }],
+  score: 0, doubleTimer: 0
+});
+g.applyPowerUp({ x: 10, y: 10, type: 'bomb' });
+assert.strictEqual(g.getSnapshot().score, 10 + 2 * 15, '爆破专家 Lv.2：炸弹每块 5+10=15 分');
+
+// 护盾撞碎岩石：计分并计入连击
+g.startGame();
+g.setTestState({
+  snake: [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }],
+  direction: { x: 1, y: 0 },
+  obstacles: [{ x: 11, y: 10, warnTimer: 0 }],
+  food: { x: 0, y: 19 }, powerUp: null,
+  shieldTimer: 5, score: 0, doubleTimer: 0,
+  comboUpgradeLevel: 1, comboCount: 1, comboTimer: 3
+});
+g.stepGame();
+let shieldSnap = g.getSnapshot();
+assert.strictEqual(shieldSnap.obstacles.length, 0);
+assert.strictEqual(shieldSnap.comboCount, 2, '护盾碎石应计入连击');
+assert.strictEqual(shieldSnap.score, 5 + 4, '护盾碎石 5 分 + 连击 x2 额外 4 分');
+assert(shieldSnap.comboTimer > 4.9, '护盾碎石应刷新连击窗口');
+
+// 以石养身：稀有，每 15 块回 1 命；满血改为 +3s 护盾
+const feastCard = g.UPGRADE_POOL.find((u) => u.id === 'stone_feast');
+assert.strictEqual(feastCard.rarity, 'rare');
+g.startGame();
+feastCard.apply();
+assert.strictEqual(feastCard.canPick(), false);
+g.setTestState({ lives: 2, maxLives: 3, shieldTimer: 0 });
+g.registerRocksSmashed(14);
+assert.strictEqual(g.getSnapshot().lives, 2);
+assert.strictEqual(g.getSnapshot().stoneFeastProgress, 14);
+g.registerRocksSmashed(1);
+assert.strictEqual(g.getSnapshot().lives, 3, '累计 15 块应回复 1 命');
+assert.strictEqual(g.getSnapshot().stoneFeastProgress, 0);
+g.registerRocksSmashed(17);
+assert.strictEqual(g.getSnapshot().lives, 3);
+assert.strictEqual(g.getSnapshot().shieldTimer, 3, '满血时改为获得 3s 护盾');
+assert.strictEqual(g.getSnapshot().stoneFeastProgress, 2, '溢出进度应保留');
+g.startGame();
+g.registerRocksSmashed(30);
+assert.strictEqual(g.getSnapshot().stoneFeastProgress, 0, '未持有卡牌时不累计进度');
 
 // 校验「强健体魄」罕见、「圣盾赐福」罕见、「延时充能」+2s、「从容步伐」叠加上限 2 次、「碎石冲击」震碎 70%
 assert.strictEqual(g.SPEED_GAIN_PER_LEVEL, 0.04, '每级速度提升应为 0.04');
@@ -726,5 +808,5 @@ g.checkLevelUp();
   assert(env.getClipboardText().includes('恭喜通关'), '复制战绩文本应包含通关信息');
   g.gameLoop(1500);
   assert.strictEqual(env.getSaveDepth(), 0, 'Canvas save/restore 深度必须归零');
-  console.log('✓ 全部仓库模块自动化回归测试通过！（分段升级门槛 + 9项数值与UI优化 + 定时落石）');
+  console.log('✓ 全部仓库模块自动化回归测试通过！（分段升级门槛 + 9项数值与UI优化 + 定时落石 + 爆破系强化）');
 })();

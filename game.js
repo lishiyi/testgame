@@ -71,6 +71,9 @@ let hasLevelFreeze = false;
 let hasPhaseBody = false;
 let nirvanaCharges = 0;
 let nirvanaUsed = false;
+let blastExpertLevel = 0;     // 「爆破专家」叠加层数（最多 2）
+let hasStoneFeast = false;    // 是否持有「以石养身」
+let stoneFeastProgress = 0;   // 「以石养身」当前累计碎石进度
 
 let pendingUpgradeLevels = []; // Array<number | 'chest'>
 let currentChoices = [];
@@ -86,7 +89,7 @@ let stepAccumulator = 0;
 bestScoreEl.textContent = String(bestScore);
 
 // ------------------------------------------
-// 三选一强化词条池（共 12 项：普通 > 罕见 > 稀有 > 传说）
+// 三选一强化词条池（共 14 项：普通 > 罕见 > 稀有 > 传说）
 // ------------------------------------------
 const UPGRADE_POOL = [
   {
@@ -162,7 +165,7 @@ const UPGRADE_POOL = [
       );
       const cleared = obstacles.splice(0, removeCount);
       cleared.forEach((rock) => spawnBurst(rock.x, rock.y, '32, 22%, 62%', 10));
-      rocksSmashed += cleared.length;
+      registerRocksSmashed(cleared.length);
       score += calcDoublePts(cleared.length * 5);
       shakeTimer = Math.max(shakeTimer, 0.14);
       triggerHaptic(16);
@@ -245,6 +248,31 @@ const UPGRADE_POOL = [
     }
   },
   {
+    id: 'blast_expert',
+    name: '爆破专家',
+    rarity: 'uncommon',
+    getDesc: () => blastExpertLevel === 0
+      ? '炸弹刷新权重 +50%，炸弹每炸碎 1 块岩石额外 +5 分'
+      : '炸弹刷新权重再 +50%（共 +100%），每块岩石额外加分提升至 +10',
+    canPick: () => blastExpertLevel < 2,
+    apply: () => {
+      blastExpertLevel += 1;
+      addFloatingText(snake[0].x, snake[0].y, blastExpertLevel === 1 ? '爆破专家!' : '爆破专家强化!', 'hsl(24, 98%, 68%)');
+    }
+  },
+  {
+    id: 'stone_feast',
+    name: '以石养身',
+    rarity: 'rare',
+    getDesc: () => `每累计碎 ${STONE_FEAST_THRESHOLD} 块岩石回复 1 点生命；生命已满时改为获得 ${STONE_FEAST_SHIELD_SEC} 秒护盾`,
+    canPick: () => !hasStoneFeast,
+    apply: () => {
+      hasStoneFeast = true;
+      stoneFeastProgress = 0;
+      addFloatingText(snake[0].x, snake[0].y, '以石养身!', 'hsl(152, 80%, 66%)');
+    }
+  },
+  {
     id: 'nirvana',
     name: '涅槃',
     rarity: 'legendary',
@@ -315,10 +343,41 @@ function clearObstaclesNear(cx, cy, radius = 2) {
       cleared++;
     }
   }
-  if (cleared > 0) {
-    rocksSmashed += cleared;
-  }
+  registerRocksSmashed(cleared);
   return cleared;
+}
+
+// 统一的碎石计数入口：累计战绩，并推进「以石养身」进度
+function registerRocksSmashed(count) {
+  if (count <= 0) return;
+  rocksSmashed += count;
+  if (!hasStoneFeast) return;
+
+  stoneFeastProgress += count;
+  let triggered = false;
+  while (stoneFeastProgress >= STONE_FEAST_THRESHOLD) {
+    stoneFeastProgress -= STONE_FEAST_THRESHOLD;
+    triggered = true;
+    const head = snake[0];
+    if (lives < maxLives) {
+      lives += 1;
+      playTone('heal');
+      if (head) addFloatingText(head.x, head.y, '以石养身 +1 生命!', 'hsl(152, 85%, 66%)');
+    } else {
+      shieldTimer += STONE_FEAST_SHIELD_SEC;
+      if (head) addFloatingText(head.x, head.y, `以石养身 +${STONE_FEAST_SHIELD_SEC}s 护盾!`, 'hsl(164, 90%, 66%)');
+    }
+  }
+  if (triggered) updateHUD();
+  renderBuffBar();
+}
+
+// 道具实际刷新权重：炸弹随场上岩石数量动态提升，并叠加「爆破专家」加成
+function getPowerUpWeight(type) {
+  if (type === 'bomb') {
+    return getBombDynamicWeight(obstacles.length) * (1 + 0.5 * blastExpertLevel);
+  }
+  return POWERUP_TYPES[type].weight;
 }
 
 // ------------------------------------------
@@ -575,6 +634,9 @@ function initGameData() {
   hasPhaseBody = false;
   nirvanaCharges = 0;
   nirvanaUsed = false;
+  blastExpertLevel = 0;
+  hasStoneFeast = false;
+  stoneFeastProgress = 0;
 
   pendingUpgradeLevels = [];
   currentChoices = [];
@@ -852,6 +914,12 @@ function renderBuffBar() {
   if (magnetLevel > 0) {
     pills.push(`<span class="buff-pill" style="border-color: hsl(276, 82%, 64%); color: hsl(276, 96%, 82%);">磁力 Lv.${magnetLevel}</span>`);
   }
+  if (blastExpertLevel > 0) {
+    pills.push(`<span class="buff-pill" style="border-color: hsl(20, 92%, 56%); color: hsl(24, 98%, 74%);">爆破 Lv.${blastExpertLevel}</span>`);
+  }
+  if (hasStoneFeast) {
+    pills.push(`<span class="buff-pill" style="border-color: hsl(152, 70%, 46%); color: hsl(152, 85%, 72%);">养身 ${stoneFeastProgress}/${STONE_FEAST_THRESHOLD}</span>`);
+  }
   buffBarEl.innerHTML = pills.length > 0
     ? pills.join('')
     : '<span class="buff-empty">状态：暂无限时增益</span>';
@@ -906,11 +974,11 @@ function spawnPowerUp() {
   const nonRepeat = eligible.filter((key) => key !== lastPowerUpType);
   const candidates = nonRepeat.length > 0 ? nonRepeat : eligible;
 
-  const totalWeight = candidates.reduce((sum, key) => sum + POWERUP_TYPES[key].weight, 0);
+  const totalWeight = candidates.reduce((sum, key) => sum + getPowerUpWeight(key), 0);
   let roll = Math.random() * totalWeight;
   let pickedType = candidates[0];
   for (const key of candidates) {
-    roll -= POWERUP_TYPES[key].weight;
+    roll -= getPowerUpWeight(key);
     if (roll <= 0) {
       pickedType = key;
       break;
@@ -1031,7 +1099,7 @@ function applyPowerUp(item) {
   } else if (item.type === 'bomb') {
     playTone('bomb');
     const cleared = clearObstaclesNear(snake[0].x, snake[0].y, 5);
-    const pts = calcDoublePts(10 + cleared * 5);
+    const pts = calcDoublePts(10 + cleared * (5 + 5 * blastExpertLevel));
     score += pts;
     shakeTimer = Math.max(shakeTimer, 0.2);
     triggerHaptic([25, 20, 35]);
@@ -1143,23 +1211,30 @@ function stepGame() {
   );
   if (hitRockIndex !== -1) {
     if (shieldTimer > 0) {
+      // 护盾撞碎岩石：计分并计入连击，鼓励开盾主动冲撞
       const rock = obstacles[hitRockIndex];
       obstacles.splice(hitRockIndex, 1);
-      rocksSmashed += 1;
-      const smashPts = calcDoublePts(5);
+      registerRocksSmashed(1);
+      const comboBonus = registerComboBonus();
+      const smashPts = calcDoublePts(5 + comboBonus);
       score += smashPts;
       shakeTimer = Math.max(shakeTimer, 0.1);
       triggerHaptic(14);
       playTone('smash');
       spawnBurst(rock.x, rock.y, '32, 18%, 62%', 12);
-      addFloatingText(rock.x, rock.y, `碎石 +${smashPts}`, 'hsl(164, 85%, 68%)');
+      addFloatingText(
+        rock.x,
+        rock.y,
+        comboBonus > 0 ? `碎石 +${smashPts} 连击x${comboCount}` : `碎石 +${smashPts}`,
+        'hsl(164, 85%, 68%)'
+      );
       checkLevelUp();
       updateHUD();
       if (state !== 'running') return;
     } else if (invulnTimer <= 0) {
       const rock = obstacles[hitRockIndex];
       obstacles.splice(hitRockIndex, 1);
-      rocksSmashed += 1;
+      registerRocksSmashed(1);
       spawnBurst(rock.x, rock.y, '32, 18%, 62%', 10);
       if (!takeDamage(nextX, nextY)) return;
     }
