@@ -9,7 +9,7 @@ const INITIAL_INTERVAL = 140;       // Lv.1 初始每步间隔 (毫秒)
 const SPEED_GAIN_PER_LEVEL = 0.04;  // 每升 1 级速度倍率提升 0.04（隐藏属性）
 const SLOW_UPGRADE_STEP = 0.20;     // 每次减速强化降低的速度倍率
 const MIN_SPEED_MULT = 0.70;        // 隐藏速度倍率最低下限
-const POINTS_PER_LEVEL = 50;        // 每多少分升一级并新增障碍
+const POINTS_PER_LEVEL = 50;        // 初始每级基础升级分数（Lv.1–5）
 const CLEAR_LEVEL = 20;             // 达到第 20 关即判定通关胜利
 const UPGRADE_EVERY_LEVELS = 4;     // 每逢 4 的倍数关卡触发一次三选一强化
 const BASE_MAX_OBSTACLES = 18;      // 前中期场上基础岩石数量上限（Lv.1–7）
@@ -19,7 +19,7 @@ const HARD_MAX_LIVES = 6;           // 强化可提升的最大生命硬上限
 const INVULN_DURATION = 2.0;        // 受伤后的短暂无敌保护时间 (秒)
 const NIRVANA_INVULN_DURATION = 3.0;// 涅槃重生后的无敌保护时间 (秒)
 const LEVEL_FREEZE_DURATION = 3.0;  // 「时停」每关开始冻结时长 (秒)
-const COMBO_WINDOW = 4.2;           // 「连击」连续吃果有效时间窗口 (秒)
+const COMBO_WINDOW = 5.0;           // 「连击」连续吃果有效时间窗口 (秒)
 const SHAKE_DURATION = 0.22;        // 受击屏幕震动持续时间 (秒)
 const HITSTOP_DURATION = 0.045;     // 拾取道具瞬间微顿帧时长 (秒)
 const STORAGE_KEY = 'classic_snake_best_score_v2';
@@ -38,7 +38,7 @@ const POWERUP_TYPES = {
     label: '爆破炸弹',
     shortLabel: '炸弹',
     unlockLevel: 2,
-    weight: 20,
+    weight: 14,
     dotClass: 'dot-bomb',
     color: 'hsl(20, 95%, 58%)'
   },
@@ -111,6 +111,32 @@ const RARITY_CONFIG = {
   rare: { label: '稀有', weight: 2 },
   legendary: { label: '传说', weight: 1 }
 };
+
+// 分段升级门槛：Lv.1–5 每级 50 分，Lv.6–12 每级 75 分，Lv.13–19 每级 100 分，Lv.20+ 无尽每级 125 分
+function getPointsForNextLevel(lv) {
+  if (lv >= CLEAR_LEVEL) return 125;
+  if (lv >= 13) return 100;
+  if (lv >= 6) return 75;
+  return POINTS_PER_LEVEL;
+}
+
+function getScoreForLevel(targetLv) {
+  let total = 0;
+  for (let lv = 1; lv < targetLv; lv++) {
+    total += getPointsForNextLevel(lv);
+  }
+  return total;
+}
+
+function getLevelForScore(currentScore) {
+  let lv = 1;
+  let remaining = Math.max(0, currentScore);
+  while (remaining >= getPointsForNextLevel(lv)) {
+    remaining -= getPointsForNextLevel(lv);
+    lv++;
+  }
+  return lv;
+}
 
 // 每关升级新增碎石数量阶梯
 function getRocksForLevel(lv) {

@@ -124,7 +124,7 @@ const UPGRADE_POOL = [
     name: '从容步伐',
     rarity: 'common',
     getDesc: () => '永久放缓自身移动速度，高压关卡转向更从容',
-    canPick: () => slowUpgradeCount < 4,
+    canPick: () => slowUpgradeCount < 2,
     apply: () => {
       slowUpgradeCount += 1;
       recalcBaseInterval();
@@ -146,18 +146,27 @@ const UPGRADE_POOL = [
     id: 'quake_clear',
     name: '碎石冲击',
     rarity: 'common',
-    getDesc: () => `立即震碎场上全部 ${obstacles.length} 块岩石障碍，每块 +5 分`,
+    getDesc: () => {
+      const cnt = Math.min(obstacles.length, Math.max(1, Math.round(obstacles.length * 0.7)));
+      return `立即震碎场上 70%（${cnt} 块）岩石障碍，每块 +5 分`;
+    },
     canPick: () => obstacles.length >= 4,
     apply: () => {
-      const cleared = obstacles.splice(0, obstacles.length);
-      const removeCount = cleared.length;
+      const removeCount = Math.min(obstacles.length, Math.max(1, Math.round(obstacles.length * 0.7)));
+      const head = snake[0];
+      obstacles.sort(
+        (a, b) =>
+          (Math.abs(a.x - head.x) + Math.abs(a.y - head.y)) -
+          (Math.abs(b.x - head.x) + Math.abs(b.y - head.y))
+      );
+      const cleared = obstacles.splice(0, removeCount);
       cleared.forEach((rock) => spawnBurst(rock.x, rock.y, '32, 22%, 62%', 10));
-      rocksSmashed += removeCount;
-      score += calcDoublePts(removeCount * 5);
+      rocksSmashed += cleared.length;
+      score += calcDoublePts(cleared.length * 5);
       shakeTimer = Math.max(shakeTimer, 0.14);
       triggerHaptic(16);
       playTone('smash');
-      addFloatingText(snake[0].x, snake[0].y, `全屏碎石 ${removeCount} 块!`, 'hsl(42, 95%, 68%)');
+      addFloatingText(head.x, head.y, `震碎 ${cleared.length} 块岩石!`, 'hsl(42, 95%, 68%)');
     }
   },
   {
@@ -177,17 +186,17 @@ const UPGRADE_POOL = [
     id: 'buff_extend',
     name: '延时充能',
     rarity: 'uncommon',
-    getDesc: () => '护盾、寒冰、双倍与幽灵持续时间永久 +2.5 秒，场上道具停留更久',
-    canPick: () => buffBonusSec < 7.5,
+    getDesc: () => '护盾、寒冰、双倍与幽灵持续时间永久 +2 秒，场上道具停留更久',
+    canPick: () => buffBonusSec < 6,
     apply: () => {
-      buffBonusSec += 2.5;
-      addFloatingText(snake[0].x, snake[0].y, '增益时长 +2.5s!', 'hsl(206, 95%, 76%)');
+      buffBonusSec += 2;
+      addFloatingText(snake[0].x, snake[0].y, '增益时长 +2s!', 'hsl(206, 95%, 76%)');
     }
   },
   {
     id: 'instant_aegis',
     name: '圣盾赐福',
-    rarity: 'common',
+    rarity: 'uncommon',
     getDesc: () => '立即获得 10 秒穿墙碎石护盾，若生命未满额外恢复 1 点生命',
     canPick: () => true,
     apply: () => {
@@ -389,7 +398,7 @@ function spawnLevelObstacles(count, lv = level) {
 }
 
 function checkLevelUp() {
-  const rawTarget = Math.floor(score / POINTS_PER_LEVEL) + 1;
+  const rawTarget = getLevelForScore(score);
   const targetLevel = endlessMode ? rawTarget : Math.min(CLEAR_LEVEL, rawTarget);
   if (targetLevel > level) {
     const prevLevel = level;
@@ -840,7 +849,9 @@ function renderBuffBar() {
   if (magnetLevel > 0) {
     pills.push(`<span class="buff-pill" style="border-color: hsl(276, 82%, 64%); color: hsl(276, 96%, 82%);">磁力 Lv.${magnetLevel}</span>`);
   }
-  buffBarEl.innerHTML = pills.join('');
+  buffBarEl.innerHTML = pills.length > 0
+    ? pills.join('')
+    : '<span class="buff-empty">状态：暂无限时增益</span>';
 }
 
 // ------------------------------------------
@@ -1003,14 +1014,14 @@ function applyPowerUp(item) {
   } else if (item.type === 'ice') {
     playTone('powerup');
     score += calcDoublePts(10);
-    iceTimer = POWERUP_TYPES.ice.duration + buffBonusSec;
+    iceTimer = Math.max(iceTimer, POWERUP_TYPES.ice.duration + buffBonusSec);
     pendingGrowth += 1;
     spawnBurst(item.x, item.y, '196, 90%, 64%', 12);
     addFloatingText(item.x, item.y, '寒冰减速!', 'hsl(196, 92%, 72%)');
   } else if (item.type === 'shield') {
     playTone('powerup');
     score += calcDoublePts(10);
-    shieldTimer = POWERUP_TYPES.shield.duration + buffBonusSec;
+    shieldTimer = Math.max(shieldTimer, POWERUP_TYPES.shield.duration + buffBonusSec);
     pendingGrowth += 1;
     spawnBurst(item.x, item.y, '164, 85%, 56%', 12);
     addFloatingText(item.x, item.y, '穿墙碎石护盾!', 'hsl(164, 90%, 66%)');

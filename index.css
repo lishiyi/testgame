@@ -269,50 +269,67 @@ body {
   height: 100%;
 }
 
-/* Floating Active Buffs & Level Banner */
+/* Non-occluding Status Strip (Buffs & Level Banner above Canvas) */
+.status-strip {
+  position: relative;
+  min-height: 28px;
+  padding: 4px 8px;
+  background-color: var(--bg-board);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .buff-bar {
-  position: absolute;
-  top: 8px;
-  left: 8px;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
+  gap: 5px;
   pointer-events: none;
-  z-index: 2;
+  min-width: 0;
+}
+
+.buff-empty {
+  font-size: 0.7rem;
+  color: var(--text-muted);
 }
 
 .buff-pill {
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 0.75rem;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 0.72rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  background-color: hsla(150, 12%, 10%, 0.85);
+  background-color: hsla(150, 12%, 12%, 0.72);
   border: 1px solid var(--border-strong);
   color: var(--text-primary);
 }
 
 .level-banner {
   position: absolute;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 5px 12px;
-  border-radius: 6px;
-  font-size: 0.75rem;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 3px 9px;
+  border-radius: 5px;
+  font-size: 0.72rem;
   font-weight: 700;
-  background-color: hsla(356, 42%, 14%, 0.92);
-  border: 1px solid hsl(356, 82%, 56%);
+  background-color: hsla(356, 42%, 14%, 0.82);
+  backdrop-filter: blur(4px);
+  border: 1px solid hsla(356, 82%, 56%, 0.8);
   color: hsl(356, 95%, 74%);
   pointer-events: none;
   z-index: 3;
   white-space: nowrap;
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition: opacity 0.22s ease, transform 0.22s ease;
 }
 
 .level-banner.hidden {
   opacity: 0;
-  transform: translate(-50%, -6px);
+  transform: translateY(-50%) scale(0.97);
 }
 
 /* Roguelike 3-Choice Upgrade Modal */

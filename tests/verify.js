@@ -158,15 +158,30 @@ assert.deepStrictEqual(scriptPaths, [
   './game.js'
 ], 'index.html 模块脚本加载顺序应匹配预期');
 
+const statusStripIdx = indexHtml.indexOf('class="status-strip"');
+const boardStageIdx = indexHtml.indexOf('class="board-stage"');
+const buffBarIdx = indexHtml.indexOf('id="buff-bar"');
+const levelBannerIdx = indexHtml.indexOf('id="level-banner"');
+assert(
+  statusStripIdx !== -1 &&
+  buffBarIdx > statusStripIdx && buffBarIdx < boardStageIdx &&
+  levelBannerIdx > statusStripIdx && levelBannerIdx < boardStageIdx,
+  'buff-bar 与 level-banner 应位于画布上方的独立 status-strip 内，不遮挡棋盘地面'
+);
+
 const combinedRepoCode = '"use strict";\n' + scriptPaths
   .map((rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8'))
   .join('\n') + `
   globalThis.__game = {
     SPEED_GAIN_PER_LEVEL,
     SLOW_UPGRADE_STEP,
+    COMBO_WINDOW,
     POWERUP_TYPES,
     UPGRADE_POOL,
     RARITY_CONFIG,
+    getPointsForNextLevel,
+    getScoreForLevel,
+    getLevelForScore,
     getRocksForLevel,
     getMaxObstacles,
     getPowerUpCooldown,
@@ -183,7 +198,7 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     gameLoop,
     renderScene,
     getSnapshot: () => JSON.parse(JSON.stringify({
-      state, level, endlessMode, score, lives, maxLives, scoreMultiplier, baseStepInterval,
+      state, level, endlessMode, score, lives, maxLives, scoreMultiplier, buffBonusSec, slowUpgradeCount, baseStepInterval,
       snake, obstacles, food, powerUp, lastPowerUpType, invulnTimer, doubleTimer, shieldTimer, ghostTimer, freezeTimer,
       comboCount, comboTimer, hasPhaseBody, hasLevelFreeze,
       nirvanaCharges, nirvanaUsed, shakeTimer, hitstopTimer,
@@ -216,7 +231,24 @@ vm.createContext(env.sandbox);
 vm.runInContext(combinedRepoCode, env.sandbox);
 const g = env.sandbox.__game;
 
-// 2. 校验动态碎石上限（Lv.8 起按 18 + 1*(lv - 7) 提升至封顶 36）与阶梯增量
+// 2. 校验分段升级门槛（50 / 75 / 100 / 125）、动态碎石上限与阶梯增量
+assert.strictEqual(g.getPointsForNextLevel(1), 50);
+assert.strictEqual(g.getPointsForNextLevel(5), 50);
+assert.strictEqual(g.getPointsForNextLevel(6), 75);
+assert.strictEqual(g.getPointsForNextLevel(12), 75);
+assert.strictEqual(g.getPointsForNextLevel(13), 100);
+assert.strictEqual(g.getPointsForNextLevel(19), 100);
+assert.strictEqual(g.getPointsForNextLevel(20), 125);
+assert.strictEqual(g.getScoreForLevel(1), 0);
+assert.strictEqual(g.getScoreForLevel(6), 250);
+assert.strictEqual(g.getScoreForLevel(13), 775);
+assert.strictEqual(g.getScoreForLevel(18), 1275);
+assert.strictEqual(g.getScoreForLevel(20), 1475);
+assert.strictEqual(g.getScoreForLevel(22), 1725);
+assert.strictEqual(g.getLevelForScore(249), 5);
+assert.strictEqual(g.getLevelForScore(250), 6);
+assert.strictEqual(g.getLevelForScore(1475), 20);
+
 assert.strictEqual(g.getMaxObstacles(1), 18);
 assert.strictEqual(g.getMaxObstacles(7), 18);
 assert.strictEqual(g.getMaxObstacles(8), 19);
@@ -233,7 +265,7 @@ assert.strictEqual(g.getRocksForLevel(15), 5);
 // 达到满额 36 块后升级不再显示红色落石警示
 g.startGame();
 const fullRocks = Array.from({ length: 36 }, (_, i) => ({ x: (i % 16) + 2, y: Math.floor(i / 16) + 2, warnTimer: 0 }));
-g.setTestState({ obstacles: fullRocks, score: 850 }); // 升至 Lv.18
+g.setTestState({ obstacles: fullRocks, score: g.getScoreForLevel(18) }); // 升至 Lv.18
 g.checkLevelUp();
 assert.strictEqual(g.getSnapshot().level, 18);
 assert.strictEqual(env.getEl('level-banner').classList.contains('hidden'), true);
@@ -348,7 +380,7 @@ assert(
 g.startGame();
 g.setTestState({ snake: Array.from({ length: 8 }, (_, i) => ({ x: 10 - i, y: 10 })) });
 const pickCounts = { common: 0, uncommon: 0, rare: 0, legendary: 0 };
-const cardPoolCounts = { common: 6, uncommon: 3, rare: 2, legendary: 1 };
+const cardPoolCounts = { common: 5, uncommon: 4, rare: 2, legendary: 1 };
 for (let i = 0; i < 6000; i++) {
   for (const c of g.pickWeightedUpgrades(3)) {
     pickCounts[c.rarity]++;
@@ -367,18 +399,29 @@ assert(
   '蒙特卡洛单卡抽中率应满足 传说 < 稀有 < 罕见 < 普通'
 );
 
-// 校验 9 种道具刷新权重
+// 校验 9 种道具刷新权重（炸弹权重降为 14）
 assert.deepStrictEqual(
   Object.fromEntries(Object.entries(g.POWERUP_TYPES).map(([k, v]) => [k, v.weight])),
-  { gold: 25, bomb: 20, double: 18, shield: 20, heart: 12, ice: 20, scissors: 15, ghost: 15, chest: 8 },
-  '9 种道具权重应符合最新数值配置'
+  { gold: 25, bomb: 14, double: 18, shield: 20, heart: 12, ice: 20, scissors: 15, ghost: 15, chest: 8 },
+  '9 种道具权重应符合最新数值配置（炸弹权重 14）'
 );
 
-// 校验「强健体魄」罕见、「圣盾赐福」普通、「黄金胃口」+50%、「断尾瘦身」40%、「从容步伐」0.20 与「碎石冲击」全屏震碎
+// 校验「强健体魄」罕见、「圣盾赐福」罕见、「延时充能」+2s、「从容步伐」叠加上限 2 次、「碎石冲击」震碎 70%
 assert.strictEqual(g.SPEED_GAIN_PER_LEVEL, 0.04, '每级速度提升应为 0.04');
 assert.strictEqual(g.SLOW_UPGRADE_STEP, 0.2, '从容步伐每次应降低 0.2 速度倍率');
+assert.strictEqual(g.COMBO_WINDOW, 5.0, '连击初始维持时间窗口应为 5.0s');
 assert.strictEqual(g.UPGRADE_POOL.find((u) => u.id === 'max_hp').rarity, 'uncommon', '强健体魄稀有度应为罕见');
-assert.strictEqual(g.UPGRADE_POOL.find((u) => u.id === 'instant_aegis').rarity, 'common', '圣盾赐福稀有度应为普通');
+assert.strictEqual(g.UPGRADE_POOL.find((u) => u.id === 'instant_aegis').rarity, 'uncommon', '圣盾赐福稀有度应改为罕见');
+
+const buffExtendCard = g.UPGRADE_POOL.find((u) => u.id === 'buff_extend');
+assert(buffExtendCard.getDesc().includes('+2 秒'), '延时充能描述应为 +2 秒');
+g.startGame();
+buffExtendCard.apply();
+assert.strictEqual(g.getSnapshot().buffBonusSec, 2, '延时充能单次应增加 2 秒增益时长');
+buffExtendCard.apply();
+buffExtendCard.apply();
+assert.strictEqual(g.getSnapshot().buffBonusSec, 6, '延时充能叠满 3 次应为 6 秒');
+assert.strictEqual(buffExtendCard.canPick(), false, '延时充能叠满 3 次后不可继续抽取');
 
 const scoreCard = g.UPGRADE_POOL.find((u) => u.id === 'score_boost');
 assert(scoreCard.getDesc().includes('+50%'), '黄金胃口描述应为 +50%');
@@ -389,25 +432,22 @@ assert.strictEqual(g.getSnapshot().scoreMultiplier, 1.5, '黄金胃口单次应�
 const slowCard = g.UPGRADE_POOL.find((u) => u.id === 'slow_pace');
 g.startGame();
 g.setTestState({ level: 10 });
-slowCard.apply(); // Lv.10 gain = 0.36 -> 1.36 - 0.20 = 1.16 -> round(140 / 1.16) = 121
+slowCard.apply(); // 第 1 次
 assert.strictEqual(g.getSnapshot().baseStepInterval, Math.round(140 / (1 + 9 * 0.04 - 0.2)), '从容步伐应永久降低 0.2 速度倍率');
+assert.strictEqual(slowCard.canPick(), true, '从容步伐叠加 1 次后仍可抽取第 2 次');
+slowCard.apply(); // 第 2 次
+assert.strictEqual(slowCard.canPick(), false, '从容步伐最多叠加 2 次');
 
 const quakeCard = g.UPGRADE_POOL.find((u) => u.id === 'quake_clear');
 g.startGame();
 g.setTestState({
-  obstacles: [
-    { x: 2, y: 2, warnTimer: 0 },
-    { x: 3, y: 3, warnTimer: 0 },
-    { x: 4, y: 4, warnTimer: 0 },
-    { x: 5, y: 5, warnTimer: 0 },
-    { x: 6, y: 6, warnTimer: 0 }
-  ]
+  obstacles: Array.from({ length: 10 }, (_, i) => ({ x: 2 + i, y: 3, warnTimer: 0 }))
 });
-assert(quakeCard.getDesc().includes('全部'), '碎石冲击描述应包含全部岩石');
+assert(quakeCard.getDesc().includes('70%'), '碎石冲击描述应包含 70%');
 quakeCard.apply();
-assert.strictEqual(g.getSnapshot().obstacles.length, 0, '碎石冲击应震碎场上全部石头');
-assert.strictEqual(g.getSnapshot().rocksSmashed, 5, '碎石冲击应计入全部被震碎石块');
-assert.strictEqual(g.getSnapshot().score, 25, '碎石冲击每块石头应 +5 分');
+assert.strictEqual(g.getSnapshot().obstacles.length, 3, '10 块石头触发 70% 碎石冲击后应保留 3 块');
+assert.strictEqual(g.getSnapshot().rocksSmashed, 7, '碎石冲击应计入被震碎的 7 块石头');
+assert.strictEqual(g.getSnapshot().score, 35, '碎石冲击每块石头应 +5 分（7*5=35）');
 
 const trimCard = g.UPGRADE_POOL.find((u) => u.id === 'trim_body');
 g.startGame();
@@ -417,7 +457,7 @@ trimCard.apply();
 assert.strictEqual(g.getSnapshot().snake.length, 6, '10 节蛇身触发 40% 断尾瘦身应减至 6 节');
 
 // 7. 校验新增 4 项强化卡：连击、时停、相位穿身、涅槃
-// 7a. 连击 (combo_frenzy)
+// 7a. 连击 (combo_frenzy · 初始窗口 5.0s)
 g.startGame();
 const comboCard = g.UPGRADE_POOL.find((u) => u.id === 'combo_frenzy');
 comboCard.apply();
@@ -427,8 +467,9 @@ g.setTestState({
   food: { x: 6, y: 10 },
   obstacles: []
 });
-g.stepGame(); // 第 1 颗苹果：+10
+g.stepGame(); // 第 1 颗苹果：+10，激活 5.0s 连击窗口
 assert.strictEqual(g.getSnapshot().score, 10);
+assert.strictEqual(g.getSnapshot().comboTimer, 5.0, '连击初始窗口应为 5.0s');
 g.setTestState({ food: { x: 7, y: 10 } });
 g.stepGame(); // 第 2 颗苹果（连击 x2）：+10 + 4 = 14 -> 总分 24
 assert.strictEqual(g.getSnapshot().score, 24, '连击第 2 层应额外 +4 分');
@@ -585,6 +626,19 @@ assert(!env.getEl('buff-bar').innerHTML.includes('✨'), '双倍得分 Buff 胶�
 g.stepGame(); // 走到 (10,10) 在双倍期间吃普通果实：10 * 2 = +20 分（总分 30）
 assert.strictEqual(g.getSnapshot().score, 30, '双倍得分激活期间吃普通果实应获得 +20 分');
 
+// 8f. 护盾时长 Math.max 保护（圣盾赐福 9s 期间吃 7.5s 护盾道具不倒扣）
+g.startGame();
+g.setTestState({
+  snake: [{ x: 8, y: 10 }, { x: 7, y: 10 }, { x: 6, y: 10 }],
+  direction: { x: 1, y: 0 },
+  obstacles: [],
+  shieldTimer: 9.0,
+  powerUp: { x: 9, y: 10, type: 'shield', ttl: 8, maxTtl: 9.5 },
+  food: { x: 15, y: 15 }
+});
+g.stepGame();
+assert.strictEqual(g.getSnapshot().shieldTimer, 9.0, '剩余 9s 护盾时拾取 7.5s 护盾道具不应截短剩余时长');
+
 // 9. 校验全部 9 种道具与冻结特效的 Canvas 绘制栈平衡
 g.startGame();
 for (const type of Object.keys(g.POWERUP_TYPES)) {
@@ -598,10 +652,10 @@ for (const type of Object.keys(g.POWERUP_TYPES)) {
   assert.strictEqual(env.getSaveDepth(), 0, `渲染道具 ${type} 后 Canvas save/restore 深度必须归零`);
 }
 
-// 10. 触发通关并验证无尽模式入口与跨 20 关继续挑战
+// 10. 触发通关并验证无尽模式入口与跨 20 关继续挑战（分段升级门槛）
 g.startGame();
-g.setTestState({ score: 950, food: null });
-g.checkLevelUp(); // Lv.20 通关
+g.setTestState({ score: g.getScoreForLevel(20), food: null });
+g.checkLevelUp(); // Lv.20 通关（1475 分）
 assert.strictEqual(g.getSnapshot().state, 'won');
 assert.strictEqual(env.getEl('run-summary').classList.contains('hidden'), false);
 assert.strictEqual(env.getEl('endless-btn').classList.contains('hidden'), false, 'Lv.20 通关应显示无尽模式按钮');
@@ -615,14 +669,14 @@ assert.strictEqual(snap.endlessMode, true);
 assert(snap.food !== null, '进入无尽模式后必须确保场上存在食物');
 assert.strictEqual(env.getEl('level-value').textContent, 'Lv.20 ∞');
 assert.strictEqual(env.getEl('endless-btn').classList.contains('hidden'), true);
-g.setTestState({ score: 1050 });
+g.setTestState({ score: g.getScoreForLevel(22) });
 g.checkLevelUp();
-assert.strictEqual(g.getSnapshot().level, 22, '无尽模式应可继续突破 Lv.20 升级');
+assert.strictEqual(g.getSnapshot().level, 22, '无尽模式应可按分段门槛继续突破 Lv.20 升级');
 assert.strictEqual(env.getEl('level-value').textContent, 'Lv.22 ∞');
 
 // 再次重置验证复制战绩
 g.startGame();
-g.setTestState({ score: 950 });
+g.setTestState({ score: g.getScoreForLevel(20) });
 g.checkLevelUp();
 
 (async () => {
@@ -630,5 +684,5 @@ g.checkLevelUp();
   assert(env.getClipboardText().includes('恭喜通关'), '复制战绩文本应包含通关信息');
   g.gameLoop(1500);
   assert.strictEqual(env.getSaveDepth(), 0, 'Canvas save/restore 深度必须归零');
-  console.log('✓ 全部仓库模块自动化回归测试通过！（9种道具含Lv.3双倍得分 + 11x11炸弹 + 20关无尽模式）');
+  console.log('✓ 全部仓库模块自动化回归测试通过！（分段升级门槛 + 9项数值与UI优化）');
 })();
