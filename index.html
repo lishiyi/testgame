@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>魔改贪吃蛇 · 道具与关卡障碍版</title>
-  <meta name="description" content="带有金色苹果、寒冰减速、穿墙碎石护盾与动态关卡岩石障碍的进阶版贪吃蛇小游戏。" />
+  <title>魔改贪吃蛇 · 肉鸽强化与关卡版</title>
+  <meta name="description" content="融合三选一肉鸽强化、随机限时道具、生命值与动态关卡岩石障碍的进阶贪吃蛇游戏。" />
   <link rel="stylesheet" href="./index.css" />
 </head>
 <body>
@@ -12,7 +12,7 @@
     <header class="game-header">
       <div class="brand-group">
         <h1>经典贪吃蛇 · 进阶版</h1>
-        <p class="brand-subtitle">善用随机道具，突破不断升级的岩石关卡</p>
+        <p class="brand-subtitle">收集道具突破 20 关，每逢 4 关解锁专属强化</p>
       </div>
       <div class="header-actions">
         <button id="pause-btn" class="icon-btn" type="button" disabled aria-label="暂停或继续游戏">暂停</button>
@@ -21,6 +21,10 @@
     </header>
 
     <section class="stats-bar" aria-label="游戏计分板">
+      <div class="stat-item">
+        <span class="stat-label">生命值</span>
+        <span id="lives-value" class="stat-value lives">♥♥♥</span>
+      </div>
       <div class="stat-item">
         <span class="stat-label">当前得分</span>
         <span id="score-value" class="stat-value accent">0</span>
@@ -33,16 +37,13 @@
         <span class="stat-label">最高纪录</span>
         <span id="best-score-value" class="stat-value">0</span>
       </div>
-      <div class="stat-item">
-        <span class="stat-label">移动速度</span>
-        <span id="speed-value" class="stat-value">1.0x</span>
-      </div>
     </section>
 
     <section class="item-legend" aria-label="道具与机制图鉴">
       <span class="legend-chip"><i class="dot dot-gold"></i>金果 +30分</span>
       <span class="legend-chip"><i class="dot dot-ice"></i>寒冰减速</span>
       <span class="legend-chip"><i class="dot dot-shield"></i>护盾穿墙碎石</span>
+      <span class="legend-chip"><i class="dot dot-heart"></i>生命之心</span>
       <span class="legend-chip"><i class="dot dot-rock"></i>岩石障碍</span>
     </section>
 
@@ -53,9 +54,20 @@
 
       <div id="level-banner" class="level-banner hidden" aria-live="polite">关卡提升！注意新障碍预警</div>
 
+      <!-- 每 4 关三选一强化面板 -->
+      <div id="upgrade-overlay" class="upgrade-overlay hidden" role="dialog" aria-labelledby="upgrade-title">
+        <div class="upgrade-header">
+          <span id="upgrade-badge" class="upgrade-badge">Lv.4 里程碑奖励</span>
+          <h2 id="upgrade-title" class="upgrade-title">选择一项能力强化</h2>
+        </div>
+        <div id="upgrade-list" class="upgrade-list"></div>
+        <p class="upgrade-hint">点击卡片或按数字键 <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> 立即生效</p>
+      </div>
+
+      <!-- 开始 / 暂停 / 结束遮罩 -->
       <div id="board-overlay" class="board-overlay">
         <h2 id="overlay-title" class="overlay-title">准备出发</h2>
-        <p id="overlay-desc" class="overlay-desc">每满 50 分升级关卡并刷新岩石障碍；拾取护盾可穿墙并撞碎岩石！</p>
+        <p id="overlay-desc" class="overlay-desc">挑战全部 20 关！每满 50 分升一级，每逢 4 关可三选一强化自身能力。</p>
         <button id="start-btn" class="primary-btn" type="button">开始游戏</button>
       </div>
     </section>
@@ -63,7 +75,7 @@
     <footer class="controls-section">
       <div class="keyboard-hints">
         <span><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> 或 <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> 转向</span>
-        <span><kbd>Space</kbd> 暂停 / 继续 · <kbd>Enter</kbd> 快速开始</span>
+        <span><kbd>Space</kbd> 暂停 / 继续 · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 选强化</span>
       </div>
 
       <div class="dpad" role="group" aria-label="方向控制键">
