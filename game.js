@@ -71,7 +71,7 @@ let hasLevelFreeze = false;
 let hasPhaseBody = false;
 let nirvanaCharges = 0;
 let nirvanaUsed = false;
-let blastExpertLevel = 0;     // 「爆破专家」叠加层数（最多 2）
+let blastExpertLevel = 0;     // 「爆破专家」是否已获得（0/1，不可叠加）
 let hasStoneFeast = false;    // 是否持有「以石养身」
 let stoneFeastProgress = 0;   // 「以石养身」当前累计碎石进度
 
@@ -251,13 +251,11 @@ const UPGRADE_POOL = [
     id: 'blast_expert',
     name: '爆破专家',
     rarity: 'uncommon',
-    getDesc: () => blastExpertLevel === 0
-      ? '炸弹刷新权重 +50%，炸弹每炸碎 1 块岩石额外 +5 分'
-      : '炸弹刷新权重再 +50%（共 +100%），每块岩石额外加分提升至 +10',
-    canPick: () => blastExpertLevel < 2,
+    getDesc: () => '炸弹刷新权重 +50%，炸弹每炸碎 1 块岩石额外 +5 分',
+    canPick: () => blastExpertLevel < 1,
     apply: () => {
-      blastExpertLevel += 1;
-      addFloatingText(snake[0].x, snake[0].y, blastExpertLevel === 1 ? '爆破专家!' : '爆破专家强化!', 'hsl(24, 98%, 68%)');
+      blastExpertLevel = 1;
+      addFloatingText(snake[0].x, snake[0].y, '爆破专家!', 'hsl(24, 98%, 68%)');
     }
   },
   {
@@ -915,7 +913,7 @@ function renderBuffBar() {
     pills.push(`<span class="buff-pill" style="border-color: hsl(276, 82%, 64%); color: hsl(276, 96%, 82%);">磁力 Lv.${magnetLevel}</span>`);
   }
   if (blastExpertLevel > 0) {
-    pills.push(`<span class="buff-pill" style="border-color: hsl(20, 92%, 56%); color: hsl(24, 98%, 74%);">爆破 Lv.${blastExpertLevel}</span>`);
+    pills.push(`<span class="buff-pill" style="border-color: hsl(20, 92%, 56%); color: hsl(24, 98%, 74%);">爆破专家</span>`);
   }
   if (hasStoneFeast) {
     pills.push(`<span class="buff-pill" style="border-color: hsl(152, 70%, 46%); color: hsl(152, 85%, 72%);">养身 ${stoneFeastProgress}/${STONE_FEAST_THRESHOLD}</span>`);

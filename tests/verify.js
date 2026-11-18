@@ -473,24 +473,22 @@ assert.strictEqual(g.getPowerUpWeight('bomb'), 20);
 assert.strictEqual(g.getPowerUpWeight('gold'), 25);
 g.setTestState({ blastExpertLevel: 1 });
 assert.strictEqual(g.getPowerUpWeight('bomb'), 30, '爆破专家 Lv.1 炸弹权重 ×1.5');
-g.setTestState({ blastExpertLevel: 2 });
-assert.strictEqual(g.getPowerUpWeight('bomb'), 40, '爆破专家 Lv.2 炸弹权重 ×2');
 
-// 爆破专家：卡牌最多 2 层，炸弹每块额外 +5/层
+// 爆破专家：不可叠加，炸弹每块额外 +5
 const blastCard = g.UPGRADE_POOL.find((u) => u.id === 'blast_expert');
 assert.strictEqual(blastCard.rarity, 'uncommon');
 g.startGame();
+assert.strictEqual(blastCard.canPick(), true);
 blastCard.apply();
-blastCard.apply();
-assert.strictEqual(g.getSnapshot().blastExpertLevel, 2);
-assert.strictEqual(blastCard.canPick(), false, '爆破专家最多叠加 2 次');
+assert.strictEqual(g.getSnapshot().blastExpertLevel, 1);
+assert.strictEqual(blastCard.canPick(), false, '爆破专家不可叠加');
 g.setTestState({
   snake: [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }],
   obstacles: [{ x: 12, y: 12, warnTimer: 0 }, { x: 7, y: 7, warnTimer: 0 }, { x: 0, y: 0, warnTimer: 0 }],
   score: 0, doubleTimer: 0
 });
 g.applyPowerUp({ x: 10, y: 10, type: 'bomb' });
-assert.strictEqual(g.getSnapshot().score, 10 + 2 * 15, '爆破专家 Lv.2：炸弹每块 5+10=15 分');
+assert.strictEqual(g.getSnapshot().score, 10 + 2 * 10, '爆破专家：炸弹每块 5+5=10 分');
 
 // 护盾撞碎岩石：计分并计入连击
 g.startGame();
@@ -509,23 +507,25 @@ assert.strictEqual(shieldSnap.comboCount, 2, '护盾碎石应计入连击');
 assert.strictEqual(shieldSnap.score, 5 + 4, '护盾碎石 5 分 + 连击 x2 额外 4 分');
 assert(shieldSnap.comboTimer > 4.9, '护盾碎石应刷新连击窗口');
 
-// 以石养身：稀有，每 15 块回 1 命；满血改为 +3s 护盾
+// 以石养身：稀有，每 20 块回 1 命；满血改为 +3s 护盾
 const feastCard = g.UPGRADE_POOL.find((u) => u.id === 'stone_feast');
 assert.strictEqual(feastCard.rarity, 'rare');
 g.startGame();
 feastCard.apply();
 assert.strictEqual(feastCard.canPick(), false);
 g.setTestState({ lives: 2, maxLives: 3, shieldTimer: 0 });
-g.registerRocksSmashed(14);
+g.registerRocksSmashed(19);
 assert.strictEqual(g.getSnapshot().lives, 2);
-assert.strictEqual(g.getSnapshot().stoneFeastProgress, 14);
+assert.strictEqual(g.getSnapshot().stoneFeastProgress, 19);
 g.registerRocksSmashed(1);
-assert.strictEqual(g.getSnapshot().lives, 3, '累计 15 块应回复 1 命');
+assert.strictEqual(g.getSnapshot().lives, 3, '累计 20 块应回复 1 命');
 assert.strictEqual(g.getSnapshot().stoneFeastProgress, 0);
-g.registerRocksSmashed(17);
+g.registerRocksSmashed(22);
 assert.strictEqual(g.getSnapshot().lives, 3);
 assert.strictEqual(g.getSnapshot().shieldTimer, 3, '满血时改为获得 3s 护盾');
 assert.strictEqual(g.getSnapshot().stoneFeastProgress, 2, '溢出进度应保留');
+g.registerRocksSmashed(18);
+assert.strictEqual(g.getSnapshot().shieldTimer, 6, '护盾奖励为叠加而非取较大值');
 g.startGame();
 g.registerRocksSmashed(30);
 assert.strictEqual(g.getSnapshot().stoneFeastProgress, 0, '未持有卡牌时不累计进度');

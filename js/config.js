@@ -153,8 +153,8 @@ function getBombDynamicWeight(rockCount) {
   return Math.min(BOMB_WEIGHT_MAX, POWERUP_TYPES.bomb.weight + extraSteps * 2);
 }
 
-// 「以石养身」：每累计碎 15 块岩石回复 1 点生命；满血时改为获得 3 秒护盾
-const STONE_FEAST_THRESHOLD = 15;
+// 「以石养身」：每累计碎 20 块岩石回复 1 点生命；满血时改为获得 3 秒护盾
+const STONE_FEAST_THRESHOLD = 20;
 const STONE_FEAST_SHIELD_SEC = 3.0;
 
 // 定时落石间隔（秒）：Lv.1–2 不落石，Lv.3–9 每 12s，Lv.10–14 每 9s，Lv.15+ / 无尽每 7s
