@@ -39,13 +39,7 @@
       </div>
     </section>
 
-    <section class="item-legend" aria-label="道具与机制图鉴">
-      <span class="legend-chip"><i class="dot dot-gold"></i>金果 +30分</span>
-      <span class="legend-chip"><i class="dot dot-ice"></i>寒冰减速</span>
-      <span class="legend-chip"><i class="dot dot-shield"></i>护盾穿墙碎石</span>
-      <span class="legend-chip"><i class="dot dot-heart"></i>生命之心</span>
-      <span class="legend-chip"><i class="dot dot-rock"></i>岩石障碍</span>
-    </section>
+    <section id="item-legend" class="item-legend" aria-label="道具解锁图鉴"></section>
 
     <section class="board-stage" aria-label="游戏画布区域">
       <canvas id="game-canvas" width="400" height="400"></canvas>
@@ -68,7 +62,21 @@
       <div id="board-overlay" class="board-overlay">
         <h2 id="overlay-title" class="overlay-title">准备出发</h2>
         <p id="overlay-desc" class="overlay-desc">挑战全部 20 关！每满 50 分升一级，每逢 4 关可三选一强化自身能力。</p>
-        <button id="start-btn" class="primary-btn" type="button">开始游戏</button>
+
+        <!-- 首次开局核心机制速览 -->
+        <div id="overlay-tips" class="overlay-tips">
+          <div class="tip-row"><span class="tip-icon lives">♥</span><span>共 3 点生命：撞墙停在原地扣 1 命并短暂无敌；撞碎石扣 1 命并撞碎该石</span></div>
+          <div class="tip-row"><span class="tip-icon warn">!</span><span>红色闪烁格为落石预警，未落下前可安全穿过；8 种随机道具随关卡逐步解锁</span></div>
+          <div class="tip-row"><span class="tip-icon rare">✦</span><span>每 4 关三选一（灰普通 · 蓝罕见 · 紫稀有 · 橙传说），选完自动暂停方便观察走位</span></div>
+        </div>
+
+        <!-- 结算战绩统计面板 -->
+        <div id="run-summary" class="run-summary hidden" aria-live="polite"></div>
+
+        <div class="overlay-actions">
+          <button id="start-btn" class="primary-btn" type="button">开始游戏</button>
+          <button id="share-btn" class="secondary-btn hidden" type="button">复制战绩</button>
+        </div>
       </div>
     </section>
 
@@ -87,6 +95,9 @@
     </footer>
   </main>
 
+  <script src="./js/config.js"></script>
+  <script src="./js/audio.js"></script>
+  <script src="./js/render.js"></script>
   <script src="./game.js"></script>
 </body>
 </html>

@@ -168,18 +168,16 @@ body {
   line-height: 1.35;
 }
 
-/* Item Legend */
+/* Item Legend (8 items, 4x2 grid with unlock status) */
 .item-legend {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px 10px;
-  padding: 6px 10px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px 8px;
+  padding: 7px 10px;
   background-color: var(--bg-board);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--text-secondary);
 }
 
@@ -188,6 +186,18 @@ body {
   align-items: center;
   gap: 5px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.legend-chip.locked {
+  opacity: 0.44;
+}
+
+.legend-lv {
+  font-size: 0.65rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-muted);
 }
 
 .dot {
@@ -195,6 +205,7 @@ body {
   height: 8px;
   border-radius: 50%;
   display: inline-block;
+  flex-shrink: 0;
 }
 
 .dot-gold {
@@ -215,8 +226,21 @@ body {
   background-color: hsl(345, 90%, 62%);
 }
 
-.dot-rock {
-  background-color: var(--accent-rock);
+.dot-bomb {
+  background-color: hsl(20, 95%, 56%);
+}
+
+.dot-scissors {
+  background-color: hsl(82, 86%, 58%);
+  border-radius: 2px;
+}
+
+.dot-ghost {
+  background-color: hsl(258, 90%, 76%);
+}
+
+.dot-chest {
+  background-color: hsl(32, 98%, 54%);
   border-radius: 2px;
 }
 
@@ -353,6 +377,37 @@ body {
   border-color: var(--accent-primary);
 }
 
+.upgrade-card.rarity-uncommon {
+  background-color: hsla(210, 26%, 16%, 0.92);
+  border-color: hsla(208, 82%, 58%, 0.52);
+}
+
+.upgrade-card.rarity-uncommon:hover {
+  background-color: hsla(210, 28%, 20%, 0.96);
+  border-color: hsl(208, 90%, 66%);
+}
+
+.upgrade-card.rarity-rare {
+  background-color: hsla(276, 26%, 16%, 0.94);
+  border-color: hsla(276, 82%, 64%, 0.62);
+}
+
+.upgrade-card.rarity-rare:hover {
+  background-color: hsla(276, 28%, 21%, 0.98);
+  border-color: hsl(276, 92%, 72%);
+}
+
+.upgrade-card.rarity-legendary {
+  background-color: hsla(26, 38%, 15%, 0.95);
+  border-color: hsla(28, 96%, 56%, 0.72);
+  box-shadow: 0 3px 0 hsl(150, 10%, 8%), 0 0 14px hsla(28, 96%, 54%, 0.16);
+}
+
+.upgrade-card.rarity-legendary:hover {
+  background-color: hsla(26, 42%, 20%, 0.98);
+  border-color: hsl(32, 100%, 64%);
+}
+
 .upgrade-card:active {
   transform: translateY(2px);
 }
@@ -380,10 +435,63 @@ body {
   min-width: 0;
 }
 
+.upgrade-title-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
 .upgrade-name {
   font-size: 0.9rem;
   font-weight: 700;
   color: var(--text-primary);
+}
+
+.upgrade-card.rarity-uncommon .upgrade-name {
+  color: hsl(206, 95%, 78%);
+}
+
+.upgrade-card.rarity-rare .upgrade-name {
+  color: hsl(276, 96%, 82%);
+}
+
+.upgrade-card.rarity-legendary .upgrade-name {
+  color: hsl(32, 100%, 76%);
+}
+
+.rarity-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+}
+
+.rarity-tag.rarity-common {
+  color: hsl(150, 8%, 68%);
+  background-color: hsla(150, 8%, 24%, 0.65);
+  border: 1px solid var(--border-subtle);
+}
+
+.rarity-tag.rarity-uncommon {
+  color: hsl(206, 96%, 78%);
+  background-color: hsla(208, 82%, 26%, 0.55);
+  border: 1px solid hsla(208, 88%, 62%, 0.55);
+}
+
+.rarity-tag.rarity-rare {
+  color: hsl(276, 98%, 84%);
+  background-color: hsla(276, 75%, 28%, 0.58);
+  border: 1px solid hsla(276, 88%, 68%, 0.62);
+}
+
+.rarity-tag.rarity-legendary {
+  color: hsl(34, 100%, 82%);
+  background-color: hsla(26, 88%, 28%, 0.65);
+  border: 1px solid hsla(30, 98%, 62%, 0.72);
 }
 
 .upgrade-desc {
@@ -401,15 +509,15 @@ body {
 .board-overlay {
   position: absolute;
   inset: 0;
-  background-color: hsla(150, 12%, 9%, 0.84);
-  backdrop-filter: blur(4px);
+  background-color: hsla(150, 12%, 9%, 0.88);
+  backdrop-filter: blur(5px);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 24px;
-  gap: 14px;
+  padding: 20px;
+  gap: 12px;
   z-index: 4;
   transition: opacity 0.18s ease;
 }
@@ -420,17 +528,167 @@ body {
 }
 
 .overlay-title {
-  font-size: 1.5rem;
+  font-size: 1.45rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--text-primary);
 }
 
 .overlay-desc {
-  font-size: 0.875rem;
-  line-height: 1.55;
+  font-size: 0.85rem;
+  line-height: 1.5;
   color: var(--text-secondary);
-  max-width: 300px;
+  max-width: 320px;
+}
+
+.overlay-tips {
+  width: 100%;
+  max-width: 344px;
+  background-color: hsla(150, 10%, 14%, 0.9);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.tip-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.tip-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-top: 1px;
+}
+
+.tip-icon.lives {
+  color: hsl(345, 92%, 72%);
+  background-color: hsla(345, 70%, 24%, 0.55);
+}
+
+.tip-icon.warn {
+  color: hsl(356, 96%, 74%);
+  background-color: hsla(356, 76%, 24%, 0.55);
+}
+
+.tip-icon.rare {
+  color: hsl(276, 96%, 82%);
+  background-color: hsla(276, 70%, 26%, 0.55);
+}
+
+.run-summary {
+  width: 100%;
+  max-width: 336px;
+  background-color: hsla(150, 10%, 14%, 0.92);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.summary-metric {
+  background-color: var(--bg-board);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 5px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.summary-metric-label {
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+}
+
+.summary-metric-val {
+  font-size: 0.875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.summary-upgrades {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.summary-upgrades-empty {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.summary-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.summary-chip.rarity-common {
+  color: var(--text-primary);
+  background-color: hsla(150, 8%, 22%, 0.8);
+  border: 1px solid var(--border-subtle);
+}
+
+.summary-chip.rarity-uncommon {
+  color: hsl(206, 95%, 80%);
+  background-color: hsla(208, 78%, 24%, 0.55);
+  border: 1px solid hsla(208, 86%, 62%, 0.52);
+}
+
+.summary-chip.rarity-rare {
+  color: hsl(276, 98%, 84%);
+  background-color: hsla(276, 72%, 26%, 0.58);
+  border: 1px solid hsla(276, 86%, 68%, 0.6);
+}
+
+.summary-chip.rarity-legendary {
+  color: hsl(34, 100%, 82%);
+  background-color: hsla(26, 86%, 28%, 0.64);
+  border: 1px solid hsla(30, 96%, 62%, 0.68);
+}
+
+.overlay-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.overlay-tips.hidden,
+.run-summary.hidden,
+.secondary-btn.hidden {
+  display: none;
 }
 
 .primary-btn {
@@ -439,7 +697,7 @@ body {
   color: var(--accent-primary-ink);
   border: none;
   border-radius: var(--radius-sm);
-  padding: 10px 24px;
+  padding: 10px 22px;
   font-size: 0.9375rem;
   font-weight: 700;
   cursor: pointer;
@@ -454,6 +712,30 @@ body {
 .primary-btn:active {
   transform: translateY(2px);
   box-shadow: 0 1px 0 hsl(152, 58%, 28%);
+}
+
+.secondary-btn {
+  appearance: none;
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-key);
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.08s ease;
+}
+
+.secondary-btn:hover {
+  background-color: hsl(150, 8%, 24%);
+  border-color: var(--accent-primary);
+}
+
+.secondary-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 hsl(150, 10%, 8%);
 }
 
 /* Touch / Mouse D-Pad */
