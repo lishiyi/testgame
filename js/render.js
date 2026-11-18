@@ -149,10 +149,12 @@ function drawPowerUp(timestamp) {
     ctx.arc(cx - r * 0.28, cy - r * 0.28, r * 0.28, 0, Math.PI * 2);
     ctx.fill();
   } else if (powerUp.type === 'double') {
-    // 双倍得分：亮金四角主星芒 + 右上副星芒
+    // 双倍得分：深琥珀金四角主星芒（带深色描边）+ 右上副星芒
     const r = CELL_SIZE * 0.33 * pulse;
     const inner = r * 0.34;
-    ctx.fillStyle = 'hsl(55, 100%, 58%)';
+    ctx.fillStyle = 'hsl(39, 96%, 42%)';
+    ctx.strokeStyle = 'hsl(28, 90%, 24%)';
+    ctx.lineWidth = 1.1;
     ctx.beginPath();
     for (let i = 0; i < 8; i++) {
       const ang = -Math.PI / 2 + (Math.PI / 4) * i;
@@ -164,16 +166,17 @@ function drawPowerUp(timestamp) {
     }
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
 
-    ctx.fillStyle = 'hsla(60, 100%, 94%, 0.9)';
+    ctx.fillStyle = 'hsla(44, 100%, 66%, 0.72)';
     ctx.beginPath();
-    ctx.arc(cx - 0.8, cy + 0.6, r * 0.22, 0, Math.PI * 2);
+    ctx.arc(cx - 0.8, cy + 0.6, r * 0.14, 0, Math.PI * 2);
     ctx.fill();
 
     const sr = CELL_SIZE * 0.14 * pulse;
     const sx = cx + r * 0.58;
     const sy = cy - r * 0.56;
-    ctx.fillStyle = 'hsl(50, 100%, 74%)';
+    ctx.fillStyle = 'hsl(36, 94%, 44%)';
     ctx.beginPath();
     ctx.moveTo(sx, sy - sr);
     ctx.lineTo(sx + sr * 0.35, sy - sr * 0.35);

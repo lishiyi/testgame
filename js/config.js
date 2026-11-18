@@ -27,7 +27,7 @@ const STORAGE_KEY = 'classic_snake_best_score_v2';
 // 9 种场上随机道具配置（按关卡逐步解锁）
 const POWERUP_TYPES = {
   gold: {
-    label: '金果 +30',
+    label: '金色果实',
     shortLabel: '金果',
     unlockLevel: 1,
     weight: 25,
@@ -43,12 +43,12 @@ const POWERUP_TYPES = {
     color: 'hsl(20, 95%, 58%)'
   },
   double: {
-    label: '✨ 双倍得分',
+    label: '双倍得分',
     shortLabel: '双倍',
     unlockLevel: 3,
     weight: 18,
     dotClass: 'dot-double',
-    color: 'hsl(55, 100%, 58%)',
+    color: 'hsl(39, 96%, 42%)',
     duration: 8.0
   },
   shield: {

@@ -216,7 +216,7 @@ body {
   width: 9px;
   height: 9px;
   border-radius: 0;
-  background-color: hsl(55, 100%, 58%);
+  background-color: hsl(39, 96%, 42%);
   clip-path: polygon(50% 0%, 66% 34%, 100% 50%, 66% 66%, 50% 100%, 34% 66%, 0% 50%, 34% 34%);
 }
 

@@ -276,7 +276,10 @@ g.stepGame();
 snap = g.getSnapshot();
 assert.deepStrictEqual(snap.snake[0], { x: 0, y: 10 }, '护盾激活时应可穿墙');
 
-// 5. 校验 9 种道具等级解锁表（1, 2, 3, 4, 5, 6, 8, 10, 12）与防连续重复生成
+// 5. 校验 9 种道具名称、等级解锁表（1, 2, 3, 4, 5, 6, 8, 10, 12）与防连续重复生成
+assert.strictEqual(g.POWERUP_TYPES.gold.label, '金色果实', '金果名称应为 金色果实');
+assert.strictEqual(g.POWERUP_TYPES.double.label, '双倍得分', '双倍道具名称应为 双倍得分');
+assert.strictEqual(g.POWERUP_TYPES.double.color, 'hsl(39, 96%, 42%)', '双倍得分图标颜色应更深沉醒目');
 assert.deepStrictEqual(
   Object.fromEntries(Object.entries(g.POWERUP_TYPES).map(([k, v]) => [k, v.unlockLevel])),
   { gold: 1, bomb: 2, double: 3, shield: 4, heart: 5, ice: 6, scissors: 8, ghost: 10, chest: 12 },
@@ -565,7 +568,7 @@ assert(env.getEl('upgrade-badge').textContent.includes('神秘宝箱'), '弹窗�
 g.selectUpgrade(0);
 assert.strictEqual(g.getSnapshot().state, 'paused', '选择宝箱强化后应自动触发安全暂停');
 
-// 8e. ✨ 双倍得分 (double)
+// 8e. 双倍得分 (double)
 g.startGame();
 g.setTestState({
   snake: [{ x: 8, y: 10 }, { x: 7, y: 10 }, { x: 6, y: 10 }],
@@ -578,6 +581,7 @@ g.stepGame(); // 走到 (9,10) 拾取双倍得分：+10 分，激活 8.0s 双倍
 assert.strictEqual(g.getSnapshot().score, 10, '首次拾取双倍得分应获得基础 +10 分');
 assert.strictEqual(g.getSnapshot().doubleTimer, 8.0, '拾取双倍得分应激活 8.0s 持续时间');
 assert(env.getEl('buff-bar').innerHTML.includes('双倍'), 'Buff 栏应显示双倍得分状态胶囊');
+assert(!env.getEl('buff-bar').innerHTML.includes('✨'), '双倍得分 Buff 胶囊不应再包含 ✨ 前缀');
 g.stepGame(); // 走到 (10,10) 在双倍期间吃普通果实：10 * 2 = +20 分（总分 30）
 assert.strictEqual(g.getSnapshot().score, 30, '双倍得分激活期间吃普通果实应获得 +20 分');
 

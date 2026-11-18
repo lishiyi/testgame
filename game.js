@@ -821,7 +821,7 @@ function renderBuffBar() {
     pills.push(`<span class="buff-pill" style="border-color: hsl(202, 92%, 60%); color: hsl(202, 98%, 80%);">时停 ${freezeTimer.toFixed(1)}s</span>`);
   }
   if (doubleTimer > 0) {
-    pills.push(`<span class="buff-pill" style="border-color: hsl(54, 96%, 54%); color: hsl(56, 100%, 76%);">✨ 双倍 ${doubleTimer.toFixed(1)}s</span>`);
+    pills.push(`<span class="buff-pill" style="border-color: hsl(39, 94%, 42%); color: hsl(42, 96%, 66%);">双倍 ${doubleTimer.toFixed(1)}s</span>`);
   }
   if (shieldTimer > 0) {
     pills.push(`<span class="buff-pill" style="border-color: hsl(164, 78%, 45%); color: hsl(164, 88%, 72%);">护盾 ${shieldTimer.toFixed(1)}s</span>`);
@@ -993,13 +993,13 @@ function applyPowerUp(item) {
     score += pts;
     pendingGrowth += 2;
     spawnBurst(item.x, item.y, '43, 96%, 58%', 14);
-    addFloatingText(item.x, item.y, `+${pts} 金果!`, 'hsl(43, 96%, 64%)');
+    addFloatingText(item.x, item.y, `+${pts} 金色果实!`, 'hsl(43, 96%, 64%)');
   } else if (item.type === 'double') {
     playTone('powerup');
     score += calcDoublePts(10);
     doubleTimer = Math.max(doubleTimer, POWERUP_TYPES.double.duration + buffBonusSec);
-    spawnBurst(item.x, item.y, '55, 100%, 62%', 15);
-    addFloatingText(item.x, item.y, '✨ 双倍得分!', 'hsl(56, 100%, 74%)');
+    spawnBurst(item.x, item.y, '39, 96%, 45%', 15);
+    addFloatingText(item.x, item.y, '双倍得分!', 'hsl(42, 98%, 62%)');
   } else if (item.type === 'ice') {
     playTone('powerup');
     score += calcDoublePts(10);
@@ -1183,7 +1183,7 @@ function stepGame() {
     if (comboBonus > 0) {
       addFloatingText(food.x, food.y, `连击x${comboCount} +${pts}`, 'hsl(46, 100%, 70%)');
     } else if (doubleTimer > 0) {
-      addFloatingText(food.x, food.y, `✨ +${pts}`, 'hsl(55, 100%, 72%)');
+      addFloatingText(food.x, food.y, `双倍 +${pts}`, 'hsl(42, 98%, 62%)');
     } else if (pts > 10) {
       addFloatingText(food.x, food.y, `+${pts}`, 'hsl(43, 96%, 68%)');
     }
