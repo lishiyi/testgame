@@ -859,6 +859,9 @@ function stepGame() {
       updateHUD();
       if (state !== 'running') return;
     } else if (invulnTimer <= 0) {
+      const rock = obstacles[hitRockIndex];
+      obstacles.splice(hitRockIndex, 1);
+      spawnBurst(rock.x, rock.y, '32, 18%, 62%', 10);
       if (!takeDamage(nextX, nextY)) return;
     }
   }
