@@ -7,7 +7,7 @@ const BASE_SIZE = 400;              // 逻辑画布尺寸 (px)
 const CELL_SIZE = BASE_SIZE / GRID_COUNT;
 const INITIAL_INTERVAL = 140;       // Lv.1 初始每步间隔 (毫秒)
 const SPEED_GAIN_PER_LEVEL = 0.04;  // 每升 1 级速度倍率提升 0.04（隐藏属性）
-const SLOW_UPGRADE_STEP = 0.15;     // 每次减速强化降低的速度倍率
+const SLOW_UPGRADE_STEP = 0.20;     // 每次减速强化降低的速度倍率
 const MIN_SPEED_MULT = 0.70;        // 隐藏速度倍率最低下限
 const POINTS_PER_LEVEL = 50;        // 每多少分升一级并新增障碍
 const CLEAR_LEVEL = 20;             // 达到第 20 关即判定通关胜利
@@ -30,7 +30,7 @@ const POWERUP_TYPES = {
     label: '金果 +30',
     shortLabel: '金果',
     unlockLevel: 1,
-    weight: 28,
+    weight: 26,
     dotClass: 'dot-gold',
     color: 'hsl(43, 96%, 56%)'
   },
@@ -38,7 +38,7 @@ const POWERUP_TYPES = {
     label: '寒冰减速',
     shortLabel: '寒冰',
     unlockLevel: 2,
-    weight: 24,
+    weight: 22,
     dotClass: 'dot-ice',
     color: 'hsl(196, 88%, 62%)',
     duration: 6.0
@@ -47,7 +47,7 @@ const POWERUP_TYPES = {
     label: '穿墙护盾',
     shortLabel: '护盾',
     unlockLevel: 3,
-    weight: 24,
+    weight: 22,
     dotClass: 'dot-shield',
     color: 'hsl(164, 82%, 50%)',
     duration: 7.5
@@ -80,7 +80,7 @@ const POWERUP_TYPES = {
     label: '幽灵相位',
     shortLabel: '幽灵',
     unlockLevel: 10,
-    weight: 11,
+    weight: 14,
     dotClass: 'dot-ghost',
     color: 'hsl(258, 90%, 76%)',
     duration: 6.5
@@ -89,7 +89,7 @@ const POWERUP_TYPES = {
     label: '神秘宝箱',
     shortLabel: '宝箱',
     unlockLevel: 12,
-    weight: 5,
+    weight: 8,
     dotClass: 'dot-chest',
     color: 'hsl(32, 98%, 56%)'
   }

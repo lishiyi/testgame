@@ -163,6 +163,7 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
   .join('\n') + `
   globalThis.__game = {
     SPEED_GAIN_PER_LEVEL,
+    SLOW_UPGRADE_STEP,
     POWERUP_TYPES,
     UPGRADE_POOL,
     RARITY_CONFIG,
@@ -182,7 +183,7 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     gameLoop,
     renderScene,
     getSnapshot: () => JSON.parse(JSON.stringify({
-      state, level, endlessMode, score, lives, maxLives, scoreMultiplier,
+      state, level, endlessMode, score, lives, maxLives, scoreMultiplier, baseStepInterval,
       snake, obstacles, food, powerUp, lastPowerUpType, invulnTimer, shieldTimer, ghostTimer, freezeTimer,
       comboCount, comboTimer, hasPhaseBody, hasLevelFreeze,
       nirvanaCharges, nirvanaUsed, shakeTimer, hitstopTimer,
@@ -359,15 +360,50 @@ assert(
   '蒙特卡洛单卡抽中率应满足 传说 < 稀有 < 罕见 < 普通'
 );
 
-// 校验「黄金胃口」+50% 与「断尾瘦身」40%
+// 校验 8 种道具刷新权重
+assert.deepStrictEqual(
+  Object.fromEntries(Object.entries(g.POWERUP_TYPES).map(([k, v]) => [k, v.weight])),
+  { gold: 26, ice: 22, shield: 22, heart: 12, bomb: 16, scissors: 15, ghost: 14, chest: 8 },
+  '8 种道具权重应符合最新数值配置'
+);
+
+// 校验「强健体魄」罕见、「圣盾赐福」普通、「黄金胃口」+50%、「断尾瘦身」40%、「从容步伐」0.20 与「碎石冲击」全屏震碎
 assert.strictEqual(g.SPEED_GAIN_PER_LEVEL, 0.04, '每级速度提升应为 0.04');
+assert.strictEqual(g.SLOW_UPGRADE_STEP, 0.2, '从容步伐每次应降低 0.2 速度倍率');
+assert.strictEqual(g.UPGRADE_POOL.find((u) => u.id === 'max_hp').rarity, 'uncommon', '强健体魄稀有度应为罕见');
+assert.strictEqual(g.UPGRADE_POOL.find((u) => u.id === 'instant_aegis').rarity, 'common', '圣盾赐福稀有度应为普通');
+
 const scoreCard = g.UPGRADE_POOL.find((u) => u.id === 'score_boost');
 assert(scoreCard.getDesc().includes('+50%'), '黄金胃口描述应为 +50%');
 g.startGame();
 scoreCard.apply();
 assert.strictEqual(g.getSnapshot().scoreMultiplier, 1.5, '黄金胃口单次应提升至 1.5x');
 
+const slowCard = g.UPGRADE_POOL.find((u) => u.id === 'slow_pace');
+g.startGame();
+g.setTestState({ level: 10 });
+slowCard.apply(); // Lv.10 gain = 0.36 -> 1.36 - 0.20 = 1.16 -> round(140 / 1.16) = 121
+assert.strictEqual(g.getSnapshot().baseStepInterval, Math.round(140 / (1 + 9 * 0.04 - 0.2)), '从容步伐应永久降低 0.2 速度倍率');
+
+const quakeCard = g.UPGRADE_POOL.find((u) => u.id === 'quake_clear');
+g.startGame();
+g.setTestState({
+  obstacles: [
+    { x: 2, y: 2, warnTimer: 0 },
+    { x: 3, y: 3, warnTimer: 0 },
+    { x: 4, y: 4, warnTimer: 0 },
+    { x: 5, y: 5, warnTimer: 0 },
+    { x: 6, y: 6, warnTimer: 0 }
+  ]
+});
+assert(quakeCard.getDesc().includes('全部'), '碎石冲击描述应包含全部岩石');
+quakeCard.apply();
+assert.strictEqual(g.getSnapshot().obstacles.length, 0, '碎石冲击应震碎场上全部石头');
+assert.strictEqual(g.getSnapshot().rocksSmashed, 5, '碎石冲击应计入全部被震碎石块');
+assert.strictEqual(g.getSnapshot().score, 25, '碎石冲击每块石头应 +5 分');
+
 const trimCard = g.UPGRADE_POOL.find((u) => u.id === 'trim_body');
+g.startGame();
 g.setTestState({ snake: Array.from({ length: 10 }, (_, i) => ({ x: 12 - i, y: 10 })) });
 assert(trimCard.getDesc().includes('40%'), '断尾瘦身描述应为 40%');
 trimCard.apply();

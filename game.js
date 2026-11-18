@@ -90,7 +90,7 @@ const UPGRADE_POOL = [
   {
     id: 'max_hp',
     name: '强健体魄',
-    rarity: 'common',
+    rarity: 'uncommon',
     getDesc: () => `最大生命值 +1（当前上限 ${maxLives}→${maxLives + 1}），并立即恢复 1 点生命`,
     canPick: () => maxLives < HARD_MAX_LIVES,
     apply: () => {
@@ -145,21 +145,18 @@ const UPGRADE_POOL = [
     id: 'quake_clear',
     name: '碎石冲击',
     rarity: 'common',
-    getDesc: () => `立即震碎场上一半岩石障碍（约 ${Math.ceil(obstacles.length / 2)} 块），每块 +5 分`,
+    getDesc: () => `立即震碎场上全部 ${obstacles.length} 块岩石障碍，每块 +5 分`,
     canPick: () => obstacles.length >= 4,
     apply: () => {
-      const removeCount = Math.ceil(obstacles.length / 2);
-      for (let i = 0; i < removeCount && obstacles.length > 0; i++) {
-        const idx = Math.floor(Math.random() * obstacles.length);
-        const rock = obstacles.splice(idx, 1)[0];
-        spawnBurst(rock.x, rock.y, '32, 22%, 62%', 10);
-      }
+      const cleared = obstacles.splice(0, obstacles.length);
+      const removeCount = cleared.length;
+      cleared.forEach((rock) => spawnBurst(rock.x, rock.y, '32, 22%, 62%', 10));
       rocksSmashed += removeCount;
       score += removeCount * 5;
-      shakeTimer = Math.max(shakeTimer, 0.12);
+      shakeTimer = Math.max(shakeTimer, 0.14);
       triggerHaptic(16);
       playTone('smash');
-      addFloatingText(snake[0].x, snake[0].y, `震碎 ${removeCount} 块岩石!`, 'hsl(42, 95%, 68%)');
+      addFloatingText(snake[0].x, snake[0].y, `全屏碎石 ${removeCount} 块!`, 'hsl(42, 95%, 68%)');
     }
   },
   {
@@ -189,7 +186,7 @@ const UPGRADE_POOL = [
   {
     id: 'instant_aegis',
     name: '圣盾赐福',
-    rarity: 'uncommon',
+    rarity: 'common',
     getDesc: () => '立即获得 10 秒穿墙碎石护盾，若生命未满额外恢复 1 点生命',
     canPick: () => true,
     apply: () => {
