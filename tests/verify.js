@@ -507,25 +507,25 @@ assert.strictEqual(shieldSnap.comboCount, 2, '护盾碎石应计入连击');
 assert.strictEqual(shieldSnap.score, 5 + 4, '护盾碎石 5 分 + 连击 x2 额外 4 分');
 assert(shieldSnap.comboTimer > 4.9, '护盾碎石应刷新连击窗口');
 
-// 以石养身：稀有，每 20 块回 1 命；满血改为 +3s 护盾
+// 以石养身：稀有，每 18 块回 1 命；满血改为 +4s 护盾（可叠加）
 const feastCard = g.UPGRADE_POOL.find((u) => u.id === 'stone_feast');
 assert.strictEqual(feastCard.rarity, 'rare');
 g.startGame();
 feastCard.apply();
 assert.strictEqual(feastCard.canPick(), false);
 g.setTestState({ lives: 2, maxLives: 3, shieldTimer: 0 });
-g.registerRocksSmashed(19);
+g.registerRocksSmashed(17);
 assert.strictEqual(g.getSnapshot().lives, 2);
-assert.strictEqual(g.getSnapshot().stoneFeastProgress, 19);
+assert.strictEqual(g.getSnapshot().stoneFeastProgress, 17);
 g.registerRocksSmashed(1);
-assert.strictEqual(g.getSnapshot().lives, 3, '累计 20 块应回复 1 命');
+assert.strictEqual(g.getSnapshot().lives, 3, '累计 18 块应回复 1 命');
 assert.strictEqual(g.getSnapshot().stoneFeastProgress, 0);
-g.registerRocksSmashed(22);
+g.registerRocksSmashed(20);
 assert.strictEqual(g.getSnapshot().lives, 3);
-assert.strictEqual(g.getSnapshot().shieldTimer, 3, '满血时改为获得 3s 护盾');
+assert.strictEqual(g.getSnapshot().shieldTimer, 4, '满血时改为获得 4s 护盾');
 assert.strictEqual(g.getSnapshot().stoneFeastProgress, 2, '溢出进度应保留');
-g.registerRocksSmashed(18);
-assert.strictEqual(g.getSnapshot().shieldTimer, 6, '护盾奖励为叠加而非取较大值');
+g.registerRocksSmashed(16);
+assert.strictEqual(g.getSnapshot().shieldTimer, 8, '护盾奖励为叠加而非取较大值');
 g.startGame();
 g.registerRocksSmashed(30);
 assert.strictEqual(g.getSnapshot().stoneFeastProgress, 0, '未持有卡牌时不累计进度');
