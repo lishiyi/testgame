@@ -168,6 +168,71 @@ body {
   line-height: 1.35;
 }
 
+/* HUD Progress & Rhythm Hint Strip */
+.progress-strip {
+  background-color: var(--bg-board);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.progress-hint {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.progress-meta-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.meta-dot {
+  color: var(--text-muted);
+}
+
+.snake-len-badge {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.snake-len-badge.warn {
+  color: hsl(42, 96%, 64%);
+}
+
+.snake-len-badge.danger {
+  color: hsl(356, 94%, 68%);
+}
+
+.progress-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background-color: hsla(150, 10%, 22%, 0.85);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, hsl(152, 72%, 46%), hsl(43, 96%, 56%));
+  transition: width 0.18s ease;
+}
+
 /* Item Legend (9 items, 3x3 grid with unlock status) */
 .item-legend {
   display: grid;
@@ -306,6 +371,34 @@ body {
   background-color: hsla(150, 12%, 12%, 0.72);
   border: 1px solid var(--border-strong);
   color: var(--text-primary);
+}
+
+.rock-drip-chip {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background-color: hsla(30, 12%, 15%, 0.72);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.rock-drip-chip.imminent {
+  border-color: hsla(20, 92%, 56%, 0.8);
+  color: hsl(24, 98%, 72%);
+  background-color: hsla(16, 48%, 16%, 0.82);
+}
+
+.rock-drip-chip.frozen {
+  border-color: hsla(202, 88%, 60%, 0.7);
+  color: hsl(202, 96%, 78%);
+}
+
+.rock-drip-chip.hidden {
+  display: none;
 }
 
 .level-banner {
@@ -618,42 +711,60 @@ body {
 
 .run-summary {
   width: 100%;
-  max-width: 336px;
+  max-width: 356px;
   background-color: hsla(150, 10%, 14%, 0.92);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  padding: 10px 12px;
+  padding: 9px 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
 }
 
 .summary-metrics {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .summary-metric {
   background-color: var(--bg-board);
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
-  padding: 5px 8px;
+  padding: 4px 5px;
   display: flex;
   flex-direction: column;
   gap: 1px;
 }
 
 .summary-metric-label {
-  font-size: 0.6875rem;
+  font-size: 0.65rem;
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .summary-metric-val {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.summary-causes {
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  background-color: hsla(150, 10%, 10%, 0.65);
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  padding: 4px 8px;
+  line-height: 1.35;
+}
+
+.summary-fatal {
+  font-weight: 700;
+  color: hsl(356, 94%, 72%);
 }
 
 .summary-upgrades {
@@ -662,6 +773,8 @@ body {
   align-items: center;
   justify-content: center;
   gap: 5px;
+  max-height: 54px;
+  overflow-y: auto;
 }
 
 .summary-upgrades-empty {

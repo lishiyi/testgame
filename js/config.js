@@ -11,18 +11,21 @@ const SLOW_UPGRADE_STEP = 0.20;     // 每次减速强化降低的速度倍率
 const MIN_SPEED_MULT = 0.70;        // 隐藏速度倍率最低下限
 const POINTS_PER_LEVEL = 50;        // 初始每级基础升级分数（Lv.1–5）
 const CLEAR_LEVEL = 20;             // 达到第 20 关即判定通关胜利
-const UPGRADE_EVERY_LEVELS = 4;     // 每逢 4 的倍数关卡触发一次三选一强化
+const UPGRADE_EVERY_LEVELS = 3;     // 每逢 3 的倍数关卡触发一次三选一强化
+const ENDLESS_MUTATOR_EVERY_LEVELS = 5; // 无尽模式每 5 关轮换一次场地词缀
 const BASE_MAX_OBSTACLES = 18;      // 前中期场上基础岩石数量上限（Lv.1–7）
 const HARD_MAX_OBSTACLES = 36;      // 高关卡动态岩石数量封顶上限
 const INITIAL_LIVES = 3;            // 初始生命值与初始上限
 const HARD_MAX_LIVES = 6;           // 强化可提升的最大生命硬上限
 const INVULN_DURATION = 2.0;        // 受伤后的短暂无敌保护时间 (秒)
 const NIRVANA_INVULN_DURATION = 3.0;// 涅槃重生后的无敌保护时间 (秒)
-const LEVEL_FREEZE_DURATION = 3.0;  // 「时停」每关开始冻结时长 (秒)
+const LEVEL_FREEZE_DURATION = 4.0;  // 「时停」每关开始冻结时长 (秒)
 const COMBO_WINDOW = 5.0;           // 「连击」连续吃果有效时间窗口 (秒)
+const MAX_COMBO_COUNT = 5;          // 「连击」最高叠加层数上限
 const SHAKE_DURATION = 0.22;        // 受击屏幕震动持续时间 (秒)
 const HITSTOP_DURATION = 0.045;     // 拾取道具瞬间微顿帧时长 (秒)
 const STORAGE_KEY = 'classic_snake_best_score_v2';
+const ENDLESS_LEVEL_STORAGE_KEY = 'classic_snake_best_endless_lv_v1';
 
 // 9 种场上随机道具配置（按关卡逐步解锁）
 const POWERUP_TYPES = {
@@ -138,6 +141,38 @@ function getLevelForScore(currentScore) {
   return lv;
 }
 
+// 苹果基础分随关卡阶梯增长：Lv.1–4 为 10，每 4 关 +2（Lv.5: 12, Lv.9: 14, Lv.13: 16, Lv.17: 18, Lv.21: 20，最高 24）
+function getFoodBasePoints(lv) {
+  const tier = Math.floor(Math.max(0, lv - 1) / 4);
+  return Math.min(24, 10 + tier * 2);
+}
+
+// 无尽模式每 5 关轮换的场地变化词缀
+const ENDLESS_MUTATORS = {
+  moving_food: {
+    id: 'moving_food',
+    name: '游走果实',
+    desc: '苹果每 3.5s 向邻格游走 1 格，吃苹果基础得分 +6'
+  },
+  double_meteor: {
+    id: 'double_meteor',
+    name: '双倍落石',
+    desc: '定时落石加快 30% 且每次落/移 2 块，炸弹刷新权重 +6'
+  },
+  fragile_aegis: {
+    id: 'fragile_aegis',
+    name: '碎石狂潮',
+    desc: '拾取护盾道具时长减半，所有碎石基础得分 ×2'
+  }
+};
+
+// 受击与死因分类名称
+const CAUSE_LABELS = {
+  wall: '撞墙',
+  rock: '撞碎石',
+  self: '撞自身'
+};
+
 // 每关升级新增碎石数量阶梯
 function getRocksForLevel(lv) {
   if (lv >= 15) return 5;
@@ -158,7 +193,7 @@ const STONE_FEAST_THRESHOLD = 18;
 const STONE_FEAST_SHIELD_SEC = 4.0;
 
 // 定时落石间隔（秒）：Lv.1–2 不落石，Lv.3–9 每 12s，Lv.10–14 每 9s，Lv.15+ / 无尽每 7s
-// 返回 0 表示当前关卡不触发定时落石；落石同样受 getMaxObstacles 上限约束
+// 返回 0 表示当前关卡不触发定时落石；到达上限后改为挪动最早出现的岩石
 function getRockDripInterval(lv) {
   if (lv >= 15) return 7;
   if (lv >= 10) return 9;
@@ -185,7 +220,7 @@ function formatDuration(seconds) {
   return `${total}秒`;
 }
 
-// 本地最高分存取
+// 本地最高分与无尽最高关卡存取
 function loadBestScore() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -198,6 +233,23 @@ function loadBestScore() {
 function saveBestScore(value) {
   try {
     localStorage.setItem(STORAGE_KEY, String(value));
+  } catch {
+    // 忽略存储异常
+  }
+}
+
+function loadBestEndlessLevel() {
+  try {
+    const saved = localStorage.getItem(ENDLESS_LEVEL_STORAGE_KEY);
+    return saved ? Math.max(0, parseInt(saved, 10) || 0) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveBestEndlessLevel(value) {
+  try {
+    localStorage.setItem(ENDLESS_LEVEL_STORAGE_KEY, String(value));
   } catch {
     // 忽略存储异常
   }

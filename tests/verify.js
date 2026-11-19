@@ -49,7 +49,7 @@ function createBrowserSandbox() {
   const elements = new Map();
   function getEl(id) {
     if (!elements.has(id)) {
-      const defaultHidden = ['level-banner', 'upgrade-overlay', 'run-summary', 'share-btn'];
+      const defaultHidden = ['level-banner', 'upgrade-overlay', 'run-summary', 'share-btn', 'rock-drip-chip'];
       const children = [];
       const listeners = {};
       elements.set(id, {
@@ -110,6 +110,7 @@ function createBrowserSandbox() {
     }
   };
 
+  const storageMap = new Map();
   const sandbox = {
     console, Math, Date, Set, Map, Array, Object, String, Number, Boolean, JSON,
     parseInt, parseFloat, isNaN, setTimeout: (fn) => { fn(); return 1; }, clearTimeout() {},
@@ -117,7 +118,10 @@ function createBrowserSandbox() {
     performance: { now: () => 1000 },
     requestAnimationFrame: () => 1,
     navigator,
-    localStorage: { getItem: () => null, setItem() {} },
+    localStorage: {
+      getItem: (k) => (storageMap.has(k) ? storageMap.get(k) : null),
+      setItem: (k, v) => { storageMap.set(k, String(v)); }
+    },
     window: {
       devicePixelRatio: 2,
       focus() {},
@@ -162,11 +166,15 @@ const statusStripIdx = indexHtml.indexOf('class="status-strip"');
 const boardStageIdx = indexHtml.indexOf('class="board-stage"');
 const buffBarIdx = indexHtml.indexOf('id="buff-bar"');
 const levelBannerIdx = indexHtml.indexOf('id="level-banner"');
+const rockDripChipIdx = indexHtml.indexOf('id="rock-drip-chip"');
+const progressStripIdx = indexHtml.indexOf('class="progress-strip"');
 assert(
+  progressStripIdx !== -1 && progressStripIdx < statusStripIdx &&
   statusStripIdx !== -1 &&
   buffBarIdx > statusStripIdx && buffBarIdx < boardStageIdx &&
+  rockDripChipIdx > statusStripIdx && rockDripChipIdx < boardStageIdx &&
   levelBannerIdx > statusStripIdx && levelBannerIdx < boardStageIdx,
-  'buff-bar 与 level-banner 应位于画布上方的独立 status-strip 内，不遮挡棋盘地面'
+  'progress-strip 与含落石倒计时的 status-strip 应位于画布上方独立区域，不遮挡棋盘地面'
 );
 
 const combinedRepoCode = '"use strict";\n' + scriptPaths
@@ -175,15 +183,22 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
   globalThis.__game = {
     SPEED_GAIN_PER_LEVEL,
     SLOW_UPGRADE_STEP,
+    UPGRADE_EVERY_LEVELS,
+    LEVEL_FREEZE_DURATION,
     COMBO_WINDOW,
+    MAX_COMBO_COUNT,
+    ENDLESS_MUTATORS,
     POWERUP_TYPES,
     UPGRADE_POOL,
     RARITY_CONFIG,
     getPointsForNextLevel,
     getScoreForLevel,
     getLevelForScore,
+    getFoodBasePoints,
+    loadBestEndlessLevel,
     getRocksForLevel,
     getRockDripInterval,
+    getEffectiveRockDripInterval,
     getBombDynamicWeight,
     getPowerUpWeight,
     registerRocksSmashed,
@@ -192,10 +207,14 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     getPowerUpCooldown,
     isPowerUpEligible,
     pickWeightedUpgrades,
+    rollEndlessMutator,
+    triggerTimedRockDrop,
     startGame,
     continueEndlessMode,
     stepGame,
     updateTimers,
+    updateHUD,
+    renderRockDripChip,
     checkLevelUp,
     openNextUpgradeChoice,
     selectUpgrade,
@@ -203,22 +222,26 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     gameLoop,
     renderScene,
     getSnapshot: () => JSON.parse(JSON.stringify({
-      state, level, endlessMode, score, lives, maxLives, scoreMultiplier, buffBonusSec, slowUpgradeCount, baseStepInterval,
+      state, level, endlessMode, activeMutator, bestEndlessLevel, score, lives, maxLives, scoreMultiplier, buffBonusSec, slowUpgradeCount, baseStepInterval,
       snake, obstacles, food, powerUp, lastPowerUpType, invulnTimer, doubleTimer, shieldTimer, ghostTimer, freezeTimer,
       comboCount, comboTimer, hasPhaseBody, hasLevelFreeze,
       nirvanaCharges, nirvanaUsed, shakeTimer, hitstopTimer,
-      rocksSmashed, runElapsedSec, pickedUpgrades,
-      blastExpertLevel, hasStoneFeast, stoneFeastProgress
+      rocksSmashed, runElapsedSec, pickedUpgrades, pendingUpgradeLevels,
+      blastExpertLevel, hasStoneFeast, stoneFeastProgress,
+      damageStats, lastHitCause, rockDripTimer, foodMoveTimer
     })),
     spawnPowerUp,
     setTestState: (patch) => {
       if (patch.level !== undefined) level = patch.level;
       if (patch.endlessMode !== undefined) endlessMode = patch.endlessMode;
+      if (patch.activeMutator !== undefined) activeMutator = patch.activeMutator;
       if (patch.snake) snake = patch.snake;
+      if (patch.pendingGrowth !== undefined) pendingGrowth = patch.pendingGrowth;
       if (patch.direction) { direction = patch.direction; directionQueue = []; }
       if (patch.score !== undefined) score = patch.score;
       if (patch.lives !== undefined) lives = patch.lives;
       if (patch.maxLives !== undefined) maxLives = patch.maxLives;
+      if (patch.buffBonusSec !== undefined) buffBonusSec = patch.buffBonusSec;
       if (patch.doubleTimer !== undefined) doubleTimer = patch.doubleTimer;
       if (patch.shieldTimer !== undefined) shieldTimer = patch.shieldTimer;
       if (patch.ghostTimer !== undefined) ghostTimer = patch.ghostTimer;
@@ -234,6 +257,8 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
       if (patch.comboUpgradeLevel !== undefined) comboUpgradeLevel = patch.comboUpgradeLevel;
       if (patch.comboCount !== undefined) comboCount = patch.comboCount;
       if (patch.comboTimer !== undefined) comboTimer = patch.comboTimer;
+      if (patch.rockDripTimer !== undefined) rockDripTimer = patch.rockDripTimer;
+      if (patch.foodMoveTimer !== undefined) foodMoveTimer = patch.foodMoveTimer;
     }
   };
 `;
@@ -311,9 +336,14 @@ assert.strictEqual(g.getSnapshot().obstacles.length, frozenStart, '时停期间�
 
 g.startGame();
 const capRocks = Array.from({ length: 18 }, (_, i) => ({ x: (i % 9) * 2 + 1, y: Math.floor(i / 9) * 2 + 1, warnTimer: 0 }));
+const secondOldPos = `${capRocks[1].x},${capRocks[1].y}`;
 g.setTestState({ level: 3, obstacles: capRocks });
 g.updateTimers(12.5);
-assert.strictEqual(g.getSnapshot().obstacles.length, 18, '达到上限后停止定时落石');
+const relocatedSnap = g.getSnapshot();
+assert.strictEqual(relocatedSnap.obstacles.length, 18, '达到上限后定时落石改为移石，维持 18 块上限');
+assert.strictEqual(`${relocatedSnap.obstacles[0].x},${relocatedSnap.obstacles[0].y}`, secondOldPos, '应移除最早出现的第 0 块石头');
+assert(relocatedSnap.obstacles[17].warnTimer > 0, '新挪动落下的石头应带 2.2s 红色预警');
+assert.strictEqual(relocatedSnap.rocksSmashed, 0, '移石不应计入玩家击碎石头数');
 
 // 达到满额 36 块后升级不再显示红色落石警示
 g.startGame();
@@ -581,9 +611,11 @@ trimCard.apply();
 assert.strictEqual(g.getSnapshot().snake.length, 6, '10 节蛇身触发 40% 断尾瘦身应减至 6 节');
 
 // 7. 校验新增 4 项强化卡：连击、时停、相位穿身、涅槃
-// 7a. 连击 (combo_frenzy · 初始窗口 5.0s)
+// 7a. 连击 (combo_frenzy · 初始窗口 5.0s · 上限 5 层)
+assert.strictEqual(g.MAX_COMBO_COUNT, 5, '连击上限应为 5 层');
 g.startGame();
 const comboCard = g.UPGRADE_POOL.find((u) => u.id === 'combo_frenzy');
+assert(comboCard.getDesc().includes('5 层'), '连击描述应标明最高 5 层');
 comboCard.apply();
 g.setTestState({
   snake: [{ x: 5, y: 10 }, { x: 4, y: 10 }, { x: 3, y: 10 }],
@@ -600,22 +632,34 @@ assert.strictEqual(g.getSnapshot().score, 24, '连击第 2 层应额外 +4 分')
 g.setTestState({ food: { x: 8, y: 10 } });
 g.stepGame(); // 第 3 颗苹果（连击 x3）：+10 + 8 = 18 -> 总分 42
 assert.strictEqual(g.getSnapshot().score, 42, '连击第 3 层应额外 +8 分');
+g.setTestState({ food: { x: 9, y: 10 } });
+g.stepGame(); // 第 4 颗苹果（连击 x4）：+10 + 12 = 22 -> 总分 64
+g.setTestState({ food: { x: 10, y: 10 } });
+g.stepGame(); // 第 5 颗苹果（连击 x5 满层）：+10 + 16 = 26 -> 总分 90
+assert.strictEqual(g.getSnapshot().comboCount, 5);
+assert.strictEqual(g.getSnapshot().score, 90, '连击第 5 层应额外 +16 分');
+g.setTestState({ food: { x: 11, y: 10 } });
+g.stepGame(); // 第 6 颗苹果：封顶维持 x5（Lv.3 苹果基础仍 10 分 + 16 = 26 -> 总分 116）
+assert.strictEqual(g.getSnapshot().comboCount, 5, '连续第 6 次吃果连击层数应封顶为 5 层');
+assert.strictEqual(g.getSnapshot().score, 116, '封顶后仍按 5 层连击奖励 +16 结算');
 
-// 7b. 时停 (level_freeze)
+// 7b. 时停 (level_freeze · 4.0s)
+assert.strictEqual(g.LEVEL_FREEZE_DURATION, 4.0, '时停时长应延长为 4.0 秒');
 g.startGame();
 const freezeCard = g.UPGRADE_POOL.find((u) => u.id === 'level_freeze');
+assert(freezeCard.getDesc().includes('4 秒'), '时停描述应包含 4 秒');
 freezeCard.apply();
 g.setTestState({
   score: 50,
   powerUp: { x: 12, y: 12, type: 'gold', ttl: 8.0, maxTtl: 9.5 }
 });
-g.checkLevelUp(); // 升至 Lv.2，触发 3 秒时停
+g.checkLevelUp(); // 升至 Lv.2，触发 4 秒时停
 snap = g.getSnapshot();
-assert.strictEqual(snap.freezeTimer, 3.0, '升入新关应触发 3 秒时停');
+assert.strictEqual(snap.freezeTimer, 4.0, '升入新关应触发 4 秒时停');
 const warnBefore = snap.obstacles.find((o) => o.warnTimer > 0).warnTimer;
 g.updateTimers(1.0); // 时停期间推进 1 秒：预警与道具倒计时不应减少
 snap = g.getSnapshot();
-assert.strictEqual(snap.freezeTimer, 2.0);
+assert.strictEqual(snap.freezeTimer, 3.0);
 assert.strictEqual(snap.obstacles.find((o) => o.warnTimer > 0).warnTimer, warnBefore, '时停期间落石预警应冻结');
 
 // 7c. 相位穿身 (phase_body)
@@ -785,20 +829,196 @@ assert.strictEqual(env.getEl('run-summary').classList.contains('hidden'), false)
 assert.strictEqual(env.getEl('endless-btn').classList.contains('hidden'), false, 'Lv.20 通关应显示无尽模式按钮');
 assert.strictEqual(env.getEl('share-btn').classList.contains('hidden'), false);
 
-// 选择继续无尽模式：恢复 running、补全食物、HUD 显示 ∞、可继续升至 Lv.21+
+// 选择继续无尽模式：恢复 running、补全食物、激活首个词缀、HUD 显示 ∞、每 5 关轮换词缀并记录最高无尽关卡
 g.continueEndlessMode();
 snap = g.getSnapshot();
 assert.strictEqual(snap.state, 'running');
 assert.strictEqual(snap.endlessMode, true);
 assert(snap.food !== null, '进入无尽模式后必须确保场上存在食物');
+assert(snap.activeMutator && g.ENDLESS_MUTATORS[snap.activeMutator], '进入无尽模式应立即激活一个场地词缀');
+assert.strictEqual(snap.bestEndlessLevel, 20, '进入无尽模式应记录初始无尽最高关卡 Lv.20');
+assert.strictEqual(g.loadBestEndlessLevel(), 20, '无尽最高关卡应持久化至 localStorage');
 assert.strictEqual(env.getEl('level-value').textContent, 'Lv.20 ∞');
 assert.strictEqual(env.getEl('endless-btn').classList.contains('hidden'), true);
-g.setTestState({ score: g.getScoreForLevel(22) });
+const firstMutator = snap.activeMutator;
+g.setTestState({ score: g.getScoreForLevel(25) });
 g.checkLevelUp();
-assert.strictEqual(g.getSnapshot().level, 22, '无尽模式应可按分段门槛继续突破 Lv.20 升级');
-assert.strictEqual(env.getEl('level-value').textContent, 'Lv.22 ∞');
+snap = g.getSnapshot();
+assert.strictEqual(snap.level, 25, '无尽模式应可按分段门槛继续突破 Lv.20 升至 Lv.25');
+assert.notStrictEqual(snap.activeMutator, firstMutator, '无尽模式每 5 关（Lv.25）应轮换为不同的场地词缀');
+assert.strictEqual(snap.bestEndlessLevel, 25, '升至 Lv.25 应刷新无尽最高关卡纪录');
+assert.strictEqual(g.loadBestEndlessLevel(), 25);
 
-// 再次重置验证复制战绩
+// 11. 校验苹果基础分随关卡增长、每 3 关强化、延时充能逐层延长停留时间、三大无尽词缀效果与 P3 信息提示
+// 11a. 苹果基础分随关卡增长：Lv.1–4 为 10，每 4 关 +2，最高 24
+assert.strictEqual(g.getFoodBasePoints(1), 10);
+assert.strictEqual(g.getFoodBasePoints(4), 10);
+assert.strictEqual(g.getFoodBasePoints(5), 12);
+assert.strictEqual(g.getFoodBasePoints(9), 14);
+assert.strictEqual(g.getFoodBasePoints(13), 16);
+assert.strictEqual(g.getFoodBasePoints(17), 18);
+assert.strictEqual(g.getFoodBasePoints(21), 20);
+assert.strictEqual(g.getFoodBasePoints(29), 24);
+assert.strictEqual(g.getFoodBasePoints(40), 24);
+
+g.startGame();
+const lv9Start = g.getScoreForLevel(9);
+g.setTestState({
+  level: 9,
+  score: lv9Start,
+  snake: [{ x: 5, y: 10 }, { x: 4, y: 10 }, { x: 3, y: 10 }],
+  direction: { x: 1, y: 0 },
+  food: { x: 6, y: 10 },
+  obstacles: [],
+  powerUp: null
+});
+g.stepGame();
+assert.strictEqual(g.getSnapshot().score - lv9Start, 14, 'Lv.9 吃普通苹果基础分应为 14 分');
+
+// 11b. 强化改为每 3 关一次（Lv.3, 6, 9, 12, 15, 18...）
+assert.strictEqual(g.UPGRADE_EVERY_LEVELS, 3, '强化触发间隔应改为每 3 关一次');
+g.startGame();
+assert.strictEqual(env.getEl('next-upgrade-hint').textContent, '下次强化 Lv.3');
+g.setTestState({ score: g.getScoreForLevel(3) });
+g.checkLevelUp();
+assert.deepStrictEqual(g.getSnapshot().pendingUpgradeLevels, [3], '升至 Lv.3 应获得里程碑强化');
+g.openNextUpgradeChoice();
+assert.strictEqual(env.getEl('upgrade-badge').textContent, 'Lv.3 里程碑奖励');
+g.selectUpgrade(0);
+g.setTestState({ score: g.getScoreForLevel(4) });
+g.checkLevelUp();
+assert.deepStrictEqual(g.getSnapshot().pendingUpgradeLevels, [], '升至 Lv.4 不再触发旧版 4 关强化');
+
+// 11c. 【延时充能】每层都延长场上道具停留时间（9.5s -> 11.5s -> 13.5s -> 15.5s）
+g.startGame();
+for (const [stacks, expectedTtl] of [[0, 9.5], [1, 11.5], [2, 13.5], [3, 15.5]]) {
+  g.setTestState({ buffBonusSec: stacks * 2, powerUp: null });
+  g.spawnPowerUp();
+  assert.strictEqual(g.getSnapshot().powerUp.maxTtl, expectedTtl, `延时充能 ${stacks} 层时场上道具停留时间应为 ${expectedTtl}s`);
+}
+
+// 11d. 无尽模式三大场地词缀效果校验
+// 游走果实 (moving_food)：吃苹果基础分 +6，每 3.5s 游走 1 格（蛇头紧邻时不逃跑）
+g.startGame();
+const lv21Start = g.getScoreForLevel(21);
+g.setTestState({
+  endlessMode: true,
+  activeMutator: 'moving_food',
+  level: 21,
+  score: lv21Start,
+  snake: [{ x: 5, y: 10 }, { x: 4, y: 10 }, { x: 3, y: 10 }],
+  direction: { x: 1, y: 0 },
+  food: { x: 6, y: 10 },
+  obstacles: [],
+  powerUp: null
+});
+g.updateTimers(3.6); // 此时苹果 (6,10) 距蛇头 (5,10) 仅 1 格，不应逃跑
+assert.deepStrictEqual(g.getSnapshot().food, { x: 6, y: 10 }, '蛇头紧邻苹果时游走果实不应贴脸逃跑');
+g.stepGame(); // 吃下 Lv.21 游走苹果：20 + 6 = 26 分
+assert.strictEqual(g.getSnapshot().score - lv21Start, 26, 'Lv.21 游走果实苹果基础分应为 20+6=26');
+g.setTestState({ food: { x: 14, y: 14 }, foodMoveTimer: 0 });
+g.updateTimers(3.6);
+const movedFood = g.getSnapshot().food;
+assert.strictEqual(Math.abs(movedFood.x - 14) + Math.abs(movedFood.y - 14), 1, '远离蛇头的游走果实满 3.5s 应向邻格移动 1 格');
+
+// 双倍落石 (double_meteor)：落石间隔 ×0.7（7s -> 4.9s），每次落/移 2 块，炸弹基础权重 +6
+g.startGame();
+g.setTestState({
+  endlessMode: true,
+  activeMutator: 'double_meteor',
+  level: 20,
+  obstacles: [{ x: 2, y: 2, warnTimer: 0 }, { x: 17, y: 17, warnTimer: 0 }],
+  blastExpertLevel: 0
+});
+assert.strictEqual(g.getEffectiveRockDripInterval(20), 4.9, '双倍落石词缀下 Lv.20 落石间隔应缩短至 4.9s');
+assert.strictEqual(g.getPowerUpWeight('bomb'), 20, '双倍落石词缀下炸弹基础权重 14 + 6 = 20');
+g.updateTimers(5.0);
+assert.strictEqual(g.getSnapshot().obstacles.length, 4, '双倍落石词缀每次定时触发应落下 2 块石头');
+
+// 碎石狂潮 (fragile_aegis)：拾取护盾时长减半，所有碎石基础分 ×2（5 -> 10）
+g.startGame();
+g.setTestState({
+  endlessMode: true,
+  activeMutator: 'fragile_aegis',
+  level: 20,
+  score: 0,
+  shieldTimer: 0,
+  buffBonusSec: 0,
+  snake: [{ x: 8, y: 10 }, { x: 7, y: 10 }, { x: 6, y: 10 }],
+  direction: { x: 1, y: 0 },
+  obstacles: [{ x: 10, y: 10, warnTimer: 0 }],
+  powerUp: { x: 9, y: 10, type: 'shield', ttl: 8, maxTtl: 9.5 },
+  food: { x: 18, y: 18 }
+});
+g.stepGame(); // 拾取护盾：+10 分，护盾时长 7.5 * 0.5 = 3.75s
+assert.strictEqual(g.getSnapshot().shieldTimer, 3.75, '碎石狂潮词缀下拾取护盾道具时长应减半为 3.75s');
+g.stepGame(); // 护盾撞碎 (10,10) 碎石：基础分 5*2 = +10 分（总分 20）
+assert.strictEqual(g.getSnapshot().score, 20, '碎石狂潮词缀下护盾撞碎岩石应获得双倍基础分 10 分');
+
+// 11e. P3 HUD 进度条、蛇长预警、落石倒计时胶囊与结算死因受击统计
+g.startGame();
+assert.strictEqual(env.getEl('next-level-hint').textContent, '距 Lv.2 还差 50 分');
+assert.strictEqual(env.getEl('snake-len-value').textContent, '蛇长 3 节');
+assert.strictEqual(env.getEl('rock-drip-chip').classList.contains('hidden'), true, 'Lv.1 不显示落石倒计时胶囊');
+
+g.setTestState({
+  level: 3,
+  score: 125, // Lv.3 起始 100 分，再差 25 分升 Lv.4（进度 50%）
+  snake: Array.from({ length: 32 }, (_, i) => ({ x: i % 20, y: Math.floor(i / 20) })),
+  rockDripTimer: 10.0 // 距 12s 落石还剩 2.0s（imminent）
+});
+g.updateHUD();
+g.renderRockDripChip();
+assert.strictEqual(env.getEl('next-level-hint').textContent, '距 Lv.4 还差 25 分');
+assert.strictEqual(env.getEl('level-progress-fill').style.width, '50%');
+assert.strictEqual(env.getEl('snake-len-value').textContent, '蛇长 32 节');
+assert.strictEqual(env.getEl('snake-len-value').classList.contains('warn'), true, '30 节以上蛇长应显示 warn 样式');
+assert.strictEqual(env.getEl('rock-drip-chip').textContent, '🪨 落石 2.0s');
+assert.strictEqual(env.getEl('rock-drip-chip').classList.contains('imminent'), true, '剩余 ≤2.5s 时落石胶囊应高亮 imminent');
+
+// 触发撞墙 -> 撞石 -> 致命撞自身，校验结算死因与受击分类统计
+g.startGame();
+g.setTestState({
+  lives: 3,
+  snake: [{ x: 19, y: 10 }, { x: 18, y: 10 }, { x: 17, y: 10 }],
+  direction: { x: 1, y: 0 },
+  invulnTimer: 0,
+  shieldTimer: 0
+});
+g.stepGame(); // 1) 撞墙 (lives: 2)
+g.setTestState({
+  snake: [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }],
+  direction: { x: 1, y: 0 },
+  obstacles: [{ x: 11, y: 10, warnTimer: 0 }],
+  food: { x: 0, y: 0 },
+  invulnTimer: 0
+});
+g.stepGame(); // 2) 撞碎石 (lives: 1)
+g.setTestState({
+  snake: [
+    { x: 6, y: 6 },
+    { x: 6, y: 7 },
+    { x: 7, y: 7 },
+    { x: 7, y: 6 },
+    { x: 7, y: 5 },
+    { x: 6, y: 5 }
+  ],
+  direction: { x: 1, y: 0 },
+  obstacles: [],
+  invulnTimer: 0,
+  ghostTimer: 0
+});
+g.stepGame(); // 3) 致命撞自身 (lives: 0 -> gameover)
+snap = g.getSnapshot();
+assert.strictEqual(snap.state, 'gameover');
+assert.strictEqual(snap.lastHitCause, 'self');
+assert.deepStrictEqual(snap.damageStats, { wall: 1, rock: 1, self: 1 });
+const summaryHtml = env.getEl('run-summary').innerHTML;
+assert(summaryHtml.includes('死因：撞自身'), '结算面板应明确显示致命死因');
+assert(summaryHtml.includes('撞墙 1 · 撞石 1 · 撞自身 1'), '结算面板应显示受击分类统计');
+assert(summaryHtml.includes('Lv.25'), '结算面板应显示持久化的无尽最高关卡纪录');
+
+// 再次重置验证通关战绩分享文本
 g.startGame();
 g.setTestState({ score: g.getScoreForLevel(20) });
 g.checkLevelUp();
@@ -806,7 +1026,9 @@ g.checkLevelUp();
 (async () => {
   await g.copyShareStats();
   assert(env.getClipboardText().includes('恭喜通关'), '复制战绩文本应包含通关信息');
+  assert(env.getClipboardText().includes('蛇长：'), '复制战绩文本应包含蛇长统计');
+  assert(env.getClipboardText().includes('受击：'), '复制战绩文本应包含受击统计');
   g.gameLoop(1500);
   assert.strictEqual(env.getSaveDepth(), 0, 'Canvas save/restore 深度必须归零');
-  console.log('✓ 全部仓库模块自动化回归测试通过！（分段升级门槛 + 9项数值与UI优化 + 定时落石 + 爆破系强化）');
+  console.log('✓ 全部仓库模块自动化回归测试通过！（连击5层 + 苹果阶梯分 + 每3关强化 + 满额移石 + 无尽词缀与最高纪录 + 4s时停/逐层延时 + P3信息提示与死因统计）');
 })();

@@ -7,8 +7,13 @@ const livesEl = document.getElementById('lives-value');
 const scoreEl = document.getElementById('score-value');
 const levelEl = document.getElementById('level-value');
 const bestScoreEl = document.getElementById('best-score-value');
+const nextLevelHintEl = document.getElementById('next-level-hint');
+const nextUpgradeHintEl = document.getElementById('next-upgrade-hint');
+const snakeLenEl = document.getElementById('snake-len-value');
+const levelProgressFillEl = document.getElementById('level-progress-fill');
 const itemLegendEl = document.getElementById('item-legend');
 const buffBarEl = document.getElementById('buff-bar');
+const rockDripChipEl = document.getElementById('rock-drip-chip');
 const levelBannerEl = document.getElementById('level-banner');
 const upgradeOverlayEl = document.getElementById('upgrade-overlay');
 const upgradeBadgeEl = document.getElementById('upgrade-badge');
@@ -47,6 +52,7 @@ let bannerTimer = 0;
 let shakeTimer = 0;
 let hitstopTimer = 0;
 let rockDripTimer = 0; // 定时落石累计计时（秒）
+let foodMoveTimer = 0; // 无尽词缀「游走果实」移动计时（秒）
 
 let comboCount = 0;
 let comboTimer = 0;
@@ -59,7 +65,9 @@ let lives = INITIAL_LIVES;
 let score = 0;
 let level = 1;
 let endlessMode = false;
+let activeMutator = null; // 无尽模式当前激活场地词缀 key
 let bestScore = loadBestScore();
+let bestEndlessLevel = loadBestEndlessLevel();
 
 // 肉鸽永久强化属性与单局统计（每局重置）
 let slowUpgradeCount = 0;
@@ -80,6 +88,9 @@ let currentChoices = [];
 let pickedUpgrades = [];       // Array<{ name, rarity }>
 let runElapsedSec = 0;
 let rocksSmashed = 0;
+let damageStats = { wall: 0, rock: 0, self: 0 }; // 受击分类统计
+let lastHitCause = null;       // 最近一次受击原因：'wall' | 'rock' | 'self' | null
+let lastDripChipKey = '';
 let shareResetTimeout = null;
 
 let baseStepInterval = INITIAL_INTERVAL;
@@ -139,7 +150,7 @@ const UPGRADE_POOL = [
     id: 'score_boost',
     name: '黄金胃口',
     rarity: 'common',
-    getDesc: () => `苹果与金果得分永久 +50%（倍率 ${scoreMultiplier.toFixed(1)}x→${(scoreMultiplier + 0.5).toFixed(1)}x）`,
+    getDesc: () => `苹果与金果得分永久 +50%（倍率 ${scoreMultiplier.toFixed(1)}x→${(scoreMultiplier + 0.5).toFixed(1)}x，减少长身体次数）`,
     canPick: () => scoreMultiplier < 2.5,
     apply: () => {
       scoreMultiplier = +(scoreMultiplier + 0.5).toFixed(1);
@@ -152,7 +163,7 @@ const UPGRADE_POOL = [
     rarity: 'common',
     getDesc: () => {
       const cnt = Math.min(obstacles.length, Math.max(1, Math.round(obstacles.length * 0.7)));
-      return `立即震碎场上 70%（${cnt} 块）岩石障碍，每块 +5 分`;
+      return `立即震碎场上 70%（${cnt} 块）岩石障碍，每块 +${getRockSmashBasePts()} 分`;
     },
     canPick: () => obstacles.length >= 4,
     apply: () => {
@@ -166,7 +177,7 @@ const UPGRADE_POOL = [
       const cleared = obstacles.splice(0, removeCount);
       cleared.forEach((rock) => spawnBurst(rock.x, rock.y, '32, 22%, 62%', 10));
       registerRocksSmashed(cleared.length);
-      score += calcDoublePts(cleared.length * 5);
+      score += calcDoublePts(cleared.length * getRockSmashBasePts());
       shakeTimer = Math.max(shakeTimer, 0.14);
       triggerHaptic(16);
       playTone('smash');
@@ -178,8 +189,8 @@ const UPGRADE_POOL = [
     name: '连击',
     rarity: 'common',
     getDesc: () => comboUpgradeLevel === 0
-      ? '短时间内连续吃果实分数叠加，每层连击额外 +4 分'
-      : '连击加分提升至每层 +8 分，且连击维持时间延长 1 秒',
+      ? `短时间内连续进食或护盾碎石叠加层数（最高 ${MAX_COMBO_COUNT} 层），每层额外 +4 分`
+      : `连击加分提升至每层 +8 分（最高 ${MAX_COMBO_COUNT} 层），且维持窗口延长 1 秒`,
     canPick: () => comboUpgradeLevel < 2,
     apply: () => {
       comboUpgradeLevel += 1;
@@ -190,11 +201,11 @@ const UPGRADE_POOL = [
     id: 'buff_extend',
     name: '延时充能',
     rarity: 'uncommon',
-    getDesc: () => '护盾、寒冰、双倍与幽灵持续时间永久 +2 秒，场上道具停留更久',
+    getDesc: () => '护盾、寒冰、双倍、幽灵持续时间及场上道具停留时间每层均永久 +2 秒',
     canPick: () => buffBonusSec < 6,
     apply: () => {
       buffBonusSec += 2;
-      addFloatingText(snake[0].x, snake[0].y, '增益时长 +2s!', 'hsl(206, 95%, 76%)');
+      addFloatingText(snake[0].x, snake[0].y, '增益与停留 +2s!', 'hsl(206, 95%, 76%)');
     }
   },
   {
@@ -213,7 +224,7 @@ const UPGRADE_POOL = [
     id: 'level_freeze',
     name: '时停',
     rarity: 'uncommon',
-    getDesc: () => '每关开始冻结 3 秒（暂停落石预警与道具倒计时，并减缓流速）',
+    getDesc: () => `每关开始冻结 ${LEVEL_FREEZE_DURATION} 秒（暂停落石预警与道具倒计时，并减缓流速）`,
     canPick: () => !hasLevelFreeze,
     apply: () => {
       hasLevelFreeze = true;
@@ -370,10 +381,34 @@ function registerRocksSmashed(count) {
   renderBuffBar();
 }
 
-// 道具实际刷新权重：炸弹随场上岩石数量动态提升，并叠加「爆破专家」加成
+function getRockSmashBasePts() {
+  return endlessMode && activeMutator === 'fragile_aegis' ? 10 : 5;
+}
+
+function getEffectiveRockDripInterval(lv = level) {
+  const base = getRockDripInterval(lv);
+  if (base <= 0) return 0;
+  return endlessMode && activeMutator === 'double_meteor' ? +(base * 0.7).toFixed(2) : base;
+}
+
+function rollEndlessMutator(forcedKey = null) {
+  const keys = Object.keys(ENDLESS_MUTATORS);
+  let nextKey = forcedKey;
+  if (!nextKey || !ENDLESS_MUTATORS[nextKey]) {
+    const pool = keys.filter((k) => k !== activeMutator);
+    const choices = pool.length > 0 ? pool : keys;
+    nextKey = choices[Math.floor(Math.random() * choices.length)];
+  }
+  activeMutator = nextKey;
+  foodMoveTimer = 0;
+  return ENDLESS_MUTATORS[nextKey];
+}
+
+// 道具实际刷新权重：炸弹随场上岩石数量动态提升，并叠加词缀与「爆破专家」加成
 function getPowerUpWeight(type) {
   if (type === 'bomb') {
-    return getBombDynamicWeight(obstacles.length) * (1 + 0.5 * blastExpertLevel);
+    const mutatorBonus = endlessMode && activeMutator === 'double_meteor' ? 6 : 0;
+    return (getBombDynamicWeight(obstacles.length) + mutatorBonus) * (1 + 0.5 * blastExpertLevel);
   }
   return POWERUP_TYPES[type].weight;
 }
@@ -405,46 +440,50 @@ function createInitialObstacles() {
   ];
 }
 
-function spawnLevelObstacles(count, lv = level) {
+function findSafeObstacleCandidates(maxNearbyRocks = 1) {
   const head = snake[0];
+  if (!head) return [];
+  const candidates = [];
+  for (let y = 1; y < GRID_COUNT - 1; y++) {
+    for (let x = 1; x < GRID_COUNT - 1; x++) {
+      if (isSnakeAt(x, y) || isObstacleAt(x, y, false)) continue;
+      if (food && food.x === x && food.y === y) continue;
+      if (powerUp && powerUp.x === x && powerUp.y === y) continue;
+
+      const dist = Math.abs(x - head.x) + Math.abs(y - head.y);
+      if (dist < 5) continue;
+
+      let inFrontLine = false;
+      for (let step = 1; step <= 6; step++) {
+        if (head.x + direction.x * step === x && head.y + direction.y * step === y) {
+          inFrontLine = true;
+          break;
+        }
+      }
+      if (inFrontLine) continue;
+
+      let nearbyRocks = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          if (isObstacleAt(x + dx, y + dy, false)) nearbyRocks++;
+        }
+      }
+      if (nearbyRocks > maxNearbyRocks) continue;
+
+      candidates.push({ x, y });
+    }
+  }
+  return candidates;
+}
+
+function spawnLevelObstacles(count, lv = level) {
   const cap = getMaxObstacles(lv);
   let spawned = 0;
 
   for (let n = 0; n < count; n++) {
     if (obstacles.length >= cap) break;
-
-    const candidates = [];
-    for (let y = 1; y < GRID_COUNT - 1; y++) {
-      for (let x = 1; x < GRID_COUNT - 1; x++) {
-        if (isSnakeAt(x, y) || isObstacleAt(x, y, false)) continue;
-        if (food && food.x === x && food.y === y) continue;
-        if (powerUp && powerUp.x === x && powerUp.y === y) continue;
-
-        const dist = Math.abs(x - head.x) + Math.abs(y - head.y);
-        if (dist < 5) continue;
-
-        let inFrontLine = false;
-        for (let step = 1; step <= 6; step++) {
-          if (head.x + direction.x * step === x && head.y + direction.y * step === y) {
-            inFrontLine = true;
-            break;
-          }
-        }
-        if (inFrontLine) continue;
-
-        let nearbyRocks = 0;
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            if (dx === 0 && dy === 0) continue;
-            if (isObstacleAt(x + dx, y + dy, false)) nearbyRocks++;
-          }
-        }
-        if (nearbyRocks > 1) continue;
-
-        candidates.push({ x, y });
-      }
-    }
-
+    const candidates = findSafeObstacleCandidates(1);
     if (candidates.length > 0) {
       const pick = candidates[Math.floor(Math.random() * candidates.length)];
       obstacles.push({ x: pick.x, y: pick.y, warnTimer: 2.2 });
@@ -455,6 +494,34 @@ function spawnLevelObstacles(count, lv = level) {
   return spawned;
 }
 
+// 定时落石与满额移石：未满上限时新增落石；到达上限后移除最早出现的岩石并在新位置落石预警
+function triggerTimedRockDrop(dropCount = 1, lv = level) {
+  const cap = getMaxObstacles(lv);
+  let acted = 0;
+
+  for (let n = 0; n < dropCount; n++) {
+    if (obstacles.length < cap) {
+      acted += spawnLevelObstacles(1, lv);
+    } else if (obstacles.length > 0) {
+      let candidates = findSafeObstacleCandidates(1);
+      if (candidates.length === 0) {
+        candidates = findSafeObstacleCandidates(3);
+      }
+      if (candidates.length > 0) {
+        const solidIdx = obstacles.findIndex((o) => o.warnTimer <= 0);
+        const removeIdx = solidIdx !== -1 ? solidIdx : 0;
+        const oldRock = obstacles.splice(removeIdx, 1)[0];
+        spawnBurst(oldRock.x, oldRock.y, '35, 18%, 50%', 4);
+        const pick = candidates[Math.floor(Math.random() * candidates.length)];
+        obstacles.push({ x: pick.x, y: pick.y, warnTimer: 2.2 });
+        acted++;
+      }
+    }
+  }
+
+  return acted;
+}
+
 function checkLevelUp() {
   const rawTarget = getLevelForScore(score);
   const targetLevel = endlessMode ? rawTarget : Math.min(CLEAR_LEVEL, rawTarget);
@@ -462,6 +529,11 @@ function checkLevelUp() {
     const prevLevel = level;
     level = targetLevel;
     recalcBaseInterval();
+
+    if (endlessMode && level > bestEndlessLevel) {
+      bestEndlessLevel = level;
+      saveBestEndlessLevel(bestEndlessLevel);
+    }
 
     if (!endlessMode && level >= CLEAR_LEVEL) {
       pendingUpgradeLevels = [];
@@ -472,6 +544,7 @@ function checkLevelUp() {
     }
 
     let spawnedRocks = 0;
+    let rotatedMutator = null;
     const newlyUnlocked = [];
     const hasAvailableUpgrade = UPGRADE_POOL.some((u) => u.canPick());
 
@@ -479,6 +552,9 @@ function checkLevelUp() {
       spawnedRocks += spawnLevelObstacles(getRocksForLevel(lv), lv);
       if (lv % UPGRADE_EVERY_LEVELS === 0 && hasAvailableUpgrade) {
         pendingUpgradeLevels.push(lv);
+      }
+      if (endlessMode && lv % ENDLESS_MUTATOR_EVERY_LEVELS === 0) {
+        rotatedMutator = rollEndlessMutator();
       }
       for (const cfg of Object.values(POWERUP_TYPES)) {
         if (cfg.unlockLevel === lv) {
@@ -490,15 +566,21 @@ function checkLevelUp() {
 
     if (hasLevelFreeze) {
       freezeTimer = LEVEL_FREEZE_DURATION;
-      renderBuffBar();
     }
+    renderBuffBar();
+    renderRockDripChip();
 
     if (newlyUnlocked.length > 0 && snake.length > 0) {
       addFloatingText(snake[0].x, snake[0].y, `解锁道具：${newlyUnlocked.join('/')}!`, 'hsl(43, 98%, 72%)');
     }
+    if (rotatedMutator && snake.length > 0) {
+      addFloatingText(snake[0].x, snake[0].y, `场地变化：${rotatedMutator.name}!`, 'hsl(38, 98%, 72%)');
+    }
 
     playTone(pendingUpgradeLevels.length > 0 ? 'upgrade' : 'levelup');
-    if (spawnedRocks > 0) {
+    if (rotatedMutator) {
+      showLevelBanner(`Lv.${level} 词缀轮换【${rotatedMutator.name}】：${rotatedMutator.desc}`);
+    } else if (spawnedRocks > 0) {
       showLevelBanner(`Lv.${level} 关卡提升！注意红色落石预警`);
     } else {
       levelBannerEl.classList.add('hidden');
@@ -622,6 +704,7 @@ function initGameData() {
   score = 0;
   level = 1;
   endlessMode = false;
+  activeMutator = null;
 
   slowUpgradeCount = 0;
   scoreMultiplier = 1.0;
@@ -641,6 +724,9 @@ function initGameData() {
   pickedUpgrades = [];
   runElapsedSec = 0;
   rocksSmashed = 0;
+  damageStats = { wall: 0, rock: 0, self: 0 };
+  lastHitCause = null;
+  lastDripChipKey = '';
 
   recalcBaseInterval();
   iceTimer = 0;
@@ -653,6 +739,7 @@ function initGameData() {
   shakeTimer = 0;
   hitstopTimer = 0;
   rockDripTimer = 0;
+  foodMoveTimer = 0;
   comboCount = 0;
   comboTimer = 0;
 
@@ -670,6 +757,7 @@ function initGameData() {
   updateHUD();
   renderLegend();
   renderBuffBar();
+  renderRockDripChip();
 }
 
 function startGame() {
@@ -689,6 +777,11 @@ function startGame() {
 function continueEndlessMode() {
   if (state !== 'won' || endlessMode) return;
   endlessMode = true;
+  if (level > bestEndlessLevel) {
+    bestEndlessLevel = level;
+    saveBestEndlessLevel(bestEndlessLevel);
+  }
+  const mut = rollEndlessMutator();
   state = 'running';
   directionQueue = [];
   stepAccumulator = 0;
@@ -706,12 +799,13 @@ function continueEndlessMode() {
   shareBtn.classList.add('hidden');
   runSummaryEl.classList.add('hidden');
   overlayEl.classList.add('hidden');
-  showLevelBanner('无尽模式开启！向更高关卡冲刺');
+  showLevelBanner(`无尽开启！场地词缀【${mut.name}】：${mut.desc}`);
   if (snake.length > 0) {
-    addFloatingText(snake[0].x, snake[0].y, '∞ 无尽模式启动!', 'hsl(43, 98%, 70%)');
+    addFloatingText(snake[0].x, snake[0].y, `∞ 词缀·${mut.name}!`, 'hsl(43, 98%, 70%)');
   }
   updateHUD();
   renderBuffBar();
+  renderRockDripChip();
 }
 
 function pauseGame(
@@ -749,6 +843,15 @@ function renderRunSummary() {
         .join('')
     : '<span class="summary-upgrades-empty">本局尚未解锁强化</span>';
 
+  const totalHits = damageStats.wall + damageStats.rock + damageStats.self;
+  const fatalPrefix = state === 'gameover' && lastHitCause
+    ? `<span class="summary-fatal">死因：${CAUSE_LABELS[lastHitCause]}</span> ｜ `
+    : '';
+  const hitBreakdown = totalHits === 0
+    ? '受击：0 次（无伤！）'
+    : `受击：撞墙 ${damageStats.wall} · 撞石 ${damageStats.rock} · 撞自身 ${damageStats.self}`;
+  const endlessRecordText = bestEndlessLevel > 0 ? `Lv.${bestEndlessLevel}` : '未开启';
+
   runSummaryEl.innerHTML = `
     <div class="summary-metrics">
       <div class="summary-metric">
@@ -759,7 +862,16 @@ function renderRunSummary() {
         <span class="summary-metric-label">击碎碎石</span>
         <span class="summary-metric-val">${rocksSmashed} 块</span>
       </div>
+      <div class="summary-metric">
+        <span class="summary-metric-label">最终蛇长</span>
+        <span class="summary-metric-val">${snake.length} 节</span>
+      </div>
+      <div class="summary-metric">
+        <span class="summary-metric-label">无尽最高</span>
+        <span class="summary-metric-val">${endlessRecordText}</span>
+      </div>
     </div>
+    <div class="summary-causes">${fatalPrefix}${hitBreakdown}</div>
     <div class="summary-upgrades">${upgradesHtml}</div>
   `;
 }
@@ -769,16 +881,18 @@ function buildShareText() {
   if (state === 'won') {
     statusLine = `🐍 贪吃蛇·肉鸽挑战｜恭喜通关！(Lv.${level})`;
   } else if (endlessMode) {
-    statusLine = `🐍 贪吃蛇·肉鸽挑战｜无尽模式止步 Lv.${level}`;
+    statusLine = `🐍 贪吃蛇·肉鸽挑战｜无尽模式止步 Lv.${level}（最高 Lv.${bestEndlessLevel}）`;
   }
   const upgradeLine = pickedUpgrades.length > 0
     ? pickedUpgrades.map((u) => u.name).join(' / ')
     : '无';
+  const hitLine = `撞墙 ${damageStats.wall} · 撞石 ${damageStats.rock} · 撞自身 ${damageStats.self}`;
 
   return [
     statusLine,
-    `🏆 得分：${score}（最高 ${bestScore}）`,
+    `🏆 得分：${score}（最高 ${bestScore}）｜ 🐍 蛇长：${snake.length} 节`,
     `⏱️ 存活：${formatDuration(runElapsedSec)} ｜ 🪨 碎石：${rocksSmashed} 块`,
+    `💥 受击：${hitLine}`,
     `✨ 强化：${upgradeLine}`
   ].join('\n');
 }
@@ -833,11 +947,16 @@ function endGame(won = false) {
     spawnBurst(Math.floor(GRID_COUNT / 2), Math.floor(GRID_COUNT / 2), '152, 80%, 58%', 18);
   }
 
+  if (endlessMode && level > bestEndlessLevel) {
+    bestEndlessLevel = level;
+    saveBestEndlessLevel(bestEndlessLevel);
+  }
+
   if (score > bestScore) {
     bestScore = score;
     saveBestScore(bestScore);
-    updateHUD();
   }
+  updateHUD();
 
   renderRunSummary();
   shareBtn.textContent = '复制战绩';
@@ -853,7 +972,7 @@ function endGame(won = false) {
     });
   } else {
     const desc = endlessMode
-      ? `无尽模式 · 止步 Lv.${level} · 本局得分 ${score} · 最高纪录 ${bestScore}`
+      ? `无尽模式 · 止步 Lv.${level}（无尽最高 Lv.${bestEndlessLevel}）· 得分 ${score}`
       : `闯至 Lv.${level} · 本局得分 ${score} · 最高纪录 ${bestScore}`;
     showOverlay('游戏结束', desc, '再来一局', {
       showTips: false,
@@ -879,10 +998,47 @@ function updateHUD() {
   scoreEl.textContent = String(score);
   levelEl.textContent = endlessMode ? `Lv.${level} ∞` : `Lv.${level}`;
   bestScoreEl.textContent = String(bestScore);
+
+  const curStart = getScoreForLevel(level);
+  const needPts = getPointsForNextLevel(level);
+  const earnedInLv = Math.max(0, score - curStart);
+  const remainPts = Math.max(0, curStart + needPts - score);
+
+  if (!endlessMode && level >= CLEAR_LEVEL) {
+    nextLevelHintEl.textContent = '已通关全部 20 关！';
+    levelProgressFillEl.style.width = '100%';
+  } else {
+    const pct = Math.min(100, Math.round((earnedInLv / needPts) * 100));
+    nextLevelHintEl.textContent = !endlessMode && level === CLEAR_LEVEL - 1
+      ? `距通关 Lv.${CLEAR_LEVEL} 还差 ${remainPts} 分`
+      : `距 Lv.${level + 1} 还差 ${remainPts} 分`;
+    levelProgressFillEl.style.width = `${pct}%`;
+  }
+
+  const hasAvailableUpgrade = UPGRADE_POOL.some((u) => u.canPick());
+  if (!hasAvailableUpgrade) {
+    nextUpgradeHintEl.textContent = '强化已满';
+  } else {
+    const nextUpgLv = (Math.floor(level / UPGRADE_EVERY_LEVELS) + 1) * UPGRADE_EVERY_LEVELS;
+    if (!endlessMode && nextUpgLv >= CLEAR_LEVEL) {
+      nextUpgradeHintEl.textContent = '强化：宝箱获取';
+    } else {
+      nextUpgradeHintEl.textContent = `下次强化 Lv.${nextUpgLv}`;
+    }
+  }
+
+  const len = snake.length;
+  snakeLenEl.textContent = `蛇长 ${len} 节`;
+  snakeLenEl.classList.toggle('warn', len >= 30 && len < 50);
+  snakeLenEl.classList.toggle('danger', len >= 50);
 }
 
 function renderBuffBar() {
   const pills = [];
+  if (endlessMode && activeMutator && ENDLESS_MUTATORS[activeMutator]) {
+    const mut = ENDLESS_MUTATORS[activeMutator];
+    pills.push(`<span class="buff-pill" title="${mut.desc}" style="border-color: hsl(38, 95%, 56%); color: hsl(43, 100%, 76%);">词缀·${mut.name}</span>`);
+  }
   if (nirvanaCharges > 0) {
     pills.push('<span class="buff-pill" style="border-color: hsl(28, 96%, 56%); color: hsl(32, 100%, 78%);">涅槃待命</span>');
   }
@@ -923,6 +1079,41 @@ function renderBuffBar() {
     : '<span class="buff-empty">状态：暂无限时增益</span>';
 }
 
+function renderRockDripChip() {
+  const effInterval = getEffectiveRockDripInterval(level);
+  if (effInterval <= 0) {
+    if (lastDripChipKey !== 'hidden') {
+      rockDripChipEl.classList.add('hidden');
+      rockDripChipEl.classList.remove('imminent', 'frozen');
+      lastDripChipKey = 'hidden';
+    }
+    return;
+  }
+
+  const atCap = obstacles.length >= getMaxObstacles(level);
+  const modeLabel = atCap ? '移石' : '落石';
+  let text = '';
+  let status = 'normal';
+
+  if (freezeTimer > 0) {
+    text = '🪨 冻结';
+    status = 'frozen';
+  } else {
+    const rem = Math.max(0, effInterval - rockDripTimer);
+    text = `🪨 ${modeLabel} ${rem.toFixed(1)}s`;
+    if (rem <= 2.5) status = 'imminent';
+  }
+
+  const nextKey = `${status}:${text}`;
+  if (nextKey !== lastDripChipKey) {
+    lastDripChipKey = nextKey;
+    rockDripChipEl.textContent = text;
+    rockDripChipEl.classList.remove('hidden');
+    rockDripChipEl.classList.toggle('imminent', status === 'imminent');
+    rockDripChipEl.classList.toggle('frozen', status === 'frozen');
+  }
+}
+
 // ------------------------------------------
 // 生成苹果、按等级解锁的随机道具与粒子特效
 // ------------------------------------------
@@ -949,6 +1140,36 @@ function spawnFood() {
     return;
   }
   food = cells[Math.floor(Math.random() * cells.length)];
+}
+
+// 无尽词缀「游走果实」：苹果每 3.5s 向相邻安全格移动 1 格（蛇头紧邻时不逃跑，避免贴脸挫败感）
+function stepMovingFood() {
+  if (!food || snake.length === 0) return false;
+  const head = snake[0];
+  if (Math.abs(food.x - head.x) + Math.abs(food.y - head.y) < 2) return false;
+
+  const dirs = [
+    { x: 1, y: 0 },
+    { x: -1, y: 0 },
+    { x: 0, y: 1 },
+    { x: 0, y: -1 }
+  ];
+  const candidates = [];
+  for (const d of dirs) {
+    const nx = food.x + d.x;
+    const ny = food.y + d.y;
+    if (nx < 0 || nx >= GRID_COUNT || ny < 0 || ny >= GRID_COUNT) continue;
+    if (isSnakeAt(nx, ny) || isObstacleAt(nx, ny, false)) continue;
+    if (powerUp && powerUp.x === nx && powerUp.y === ny) continue;
+    if (countOpenNeighbors(nx, ny) < 2) continue;
+    if (Math.abs(nx - head.x) + Math.abs(ny - head.y) < 2) continue;
+    candidates.push({ x: nx, y: ny });
+  }
+
+  if (candidates.length === 0) return false;
+  food = candidates[Math.floor(Math.random() * candidates.length)];
+  spawnBurst(food.x, food.y, '16, 90%, 62%', 4);
+  return true;
 }
 
 function isPowerUpEligible(type) {
@@ -984,7 +1205,7 @@ function spawnPowerUp() {
   }
 
   const pos = cells[Math.floor(Math.random() * cells.length)];
-  const itemTtl = 9.5 + (buffBonusSec > 0 ? 2.0 : 0);
+  const itemTtl = 9.5 + buffBonusSec;
 
   lastPowerUpType = pickedType;
   powerUp = {
@@ -1049,7 +1270,7 @@ function calcDoublePts(pts) {
 
 function registerComboBonus() {
   if (comboUpgradeLevel <= 0) return 0;
-  comboCount = Math.min(8, comboCount + 1);
+  comboCount = Math.min(MAX_COMBO_COUNT, comboCount + 1);
   comboTimer = COMBO_WINDOW + (comboUpgradeLevel > 1 ? 1.0 : 0);
   renderBuffBar();
   return comboCount >= 2 ? (comboCount - 1) * (4 * comboUpgradeLevel) : 0;
@@ -1090,14 +1311,18 @@ function applyPowerUp(item) {
   } else if (item.type === 'shield') {
     playTone('powerup');
     score += calcDoublePts(10);
-    shieldTimer = Math.max(shieldTimer, POWERUP_TYPES.shield.duration + buffBonusSec);
+    const rawShieldDur = POWERUP_TYPES.shield.duration + buffBonusSec;
+    const shieldDur = endlessMode && activeMutator === 'fragile_aegis'
+      ? rawShieldDur * 0.5
+      : rawShieldDur;
+    shieldTimer = Math.max(shieldTimer, shieldDur);
     pendingGrowth += 1;
     spawnBurst(item.x, item.y, '164, 85%, 56%', 12);
     addFloatingText(item.x, item.y, '穿墙碎石护盾!', 'hsl(164, 90%, 66%)');
   } else if (item.type === 'bomb') {
     playTone('bomb');
     const cleared = clearObstaclesNear(snake[0].x, snake[0].y, 5);
-    const pts = calcDoublePts(10 + cleared * (5 + 5 * blastExpertLevel));
+    const pts = calcDoublePts(10 + cleared * (getRockSmashBasePts() + 5 * blastExpertLevel));
     score += pts;
     shakeTimer = Math.max(shakeTimer, 0.2);
     triggerHaptic([25, 20, 35]);
@@ -1144,7 +1369,11 @@ function applyPowerUp(item) {
   renderBuffBar();
 }
 
-function takeDamage(hitX, hitY) {
+function takeDamage(hitX, hitY, cause = 'wall') {
+  if (damageStats[cause] !== undefined) {
+    damageStats[cause] += 1;
+  }
+  lastHitCause = cause;
   lives = Math.max(0, lives - 1);
   shakeTimer = SHAKE_DURATION;
   triggerHaptic([35, 25, 45]);
@@ -1197,7 +1426,7 @@ function stepGame() {
       nextY = (nextY + GRID_COUNT) % GRID_COUNT;
     } else {
       if (invulnTimer <= 0) {
-        takeDamage(head.x, head.y);
+        takeDamage(head.x, head.y, 'wall');
       }
       return;
     }
@@ -1214,7 +1443,7 @@ function stepGame() {
       obstacles.splice(hitRockIndex, 1);
       registerRocksSmashed(1);
       const comboBonus = registerComboBonus();
-      const smashPts = calcDoublePts(5 + comboBonus);
+      const smashPts = calcDoublePts(getRockSmashBasePts() + comboBonus);
       score += smashPts;
       shakeTimer = Math.max(shakeTimer, 0.1);
       triggerHaptic(14);
@@ -1234,7 +1463,7 @@ function stepGame() {
       obstacles.splice(hitRockIndex, 1);
       registerRocksSmashed(1);
       spawnBurst(rock.x, rock.y, '32, 18%, 62%', 10);
-      if (!takeDamage(nextX, nextY)) return;
+      if (!takeDamage(nextX, nextY, 'rock')) return;
     }
   }
 
@@ -1255,7 +1484,7 @@ function stepGame() {
   const bodyToCheck = willGrowThisStep ? snake : snake.slice(0, -1);
   const canPhaseSelf = invulnTimer > 0 || ghostTimer > 0 || hasPhaseBody;
   if (!canPhaseSelf && bodyToCheck.some((seg) => seg.x === nextX && seg.y === nextY)) {
-    if (!takeDamage(nextX, nextY)) return;
+    if (!takeDamage(nextX, nextY, 'self')) return;
   }
 
   // 4. 推进蛇头
@@ -1263,7 +1492,8 @@ function stepGame() {
 
   if (willEatFood) {
     const comboBonus = registerComboBonus();
-    const pts = calcDoublePts(Math.round(10 * scoreMultiplier) + comboBonus);
+    const baseFoodPts = getFoodBasePoints(level) + (endlessMode && activeMutator === 'moving_food' ? 6 : 0);
+    const pts = calcDoublePts(Math.round(baseFoodPts * scoreMultiplier) + comboBonus);
     score += pts;
     playTone('eat');
     spawnBurst(food.x, food.y, '16, 90%, 62%', 10);
@@ -1283,6 +1513,7 @@ function stepGame() {
     spawnFood();
   } else if (pendingGrowth > 0) {
     pendingGrowth--;
+    updateHUD();
   } else {
     snake.pop();
   }
@@ -1370,16 +1601,14 @@ function updateTimers(dtSeconds) {
   }
 
   if (!isWorldFrozen) {
-    // 定时落石：时停期间暂停计时；复用升级落石的公平性规则与动态上限，达到上限即不再落石
-    const dripInterval = getRockDripInterval(level);
-    if (dripInterval > 0) {
-      rockDripTimer += dtSeconds;
-      if (rockDripTimer >= dripInterval) {
-        rockDripTimer = 0;
-        spawnLevelObstacles(1, level);
+    if (endlessMode && activeMutator === 'moving_food' && food) {
+      foodMoveTimer += dtSeconds;
+      if (foodMoveTimer >= 3.5) {
+        foodMoveTimer = 0;
+        stepMovingFood();
       }
     } else {
-      rockDripTimer = 0;
+      foodMoveTimer = 0;
     }
 
     for (const obs of obstacles) {
@@ -1395,7 +1624,22 @@ function updateTimers(dtSeconds) {
         }
       }
     }
+
+    // 定时落石/移石：时停期间暂停计时；到达上限后改为挪动最早出现的岩石
+    const dripInterval = getEffectiveRockDripInterval(level);
+    if (dripInterval > 0) {
+      rockDripTimer += dtSeconds;
+      if (rockDripTimer >= dripInterval) {
+        rockDripTimer = 0;
+        const dropCnt = endlessMode && activeMutator === 'double_meteor' ? 2 : 1;
+        triggerTimedRockDrop(dropCnt, level);
+      }
+    } else {
+      rockDripTimer = 0;
+    }
   }
+
+  renderRockDripChip();
 }
 
 function gameLoop(timestamp) {

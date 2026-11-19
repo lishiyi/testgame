@@ -12,7 +12,7 @@
     <header class="game-header">
       <div class="brand-group">
         <h1>经典贪吃蛇 · 进阶版</h1>
-        <p class="brand-subtitle">收集道具突破 20 关，每逢 4 关解锁专属强化</p>
+        <p class="brand-subtitle">收集道具突破 20 关，每逢 3 关解锁专属强化</p>
       </div>
       <div class="header-actions">
         <button id="pause-btn" class="icon-btn" type="button" disabled aria-label="暂停或继续游戏">暂停</button>
@@ -39,20 +39,35 @@
       </div>
     </section>
 
+    <section class="progress-strip" aria-label="升级进度与状态信息">
+      <div class="progress-meta">
+        <span id="next-level-hint" class="progress-hint">距 Lv.2 还差 50 分</span>
+        <span class="progress-meta-right">
+          <span id="next-upgrade-hint">下次强化 Lv.3</span>
+          <span class="meta-dot">·</span>
+          <span id="snake-len-value" class="snake-len-badge">蛇长 3 节</span>
+        </span>
+      </div>
+      <div class="progress-track" aria-hidden="true">
+        <div id="level-progress-fill" class="progress-fill" style="width: 0%;"></div>
+      </div>
+    </section>
+
     <section id="item-legend" class="item-legend" aria-label="道具解锁图鉴"></section>
 
     <section class="status-strip" aria-label="实时增益与关卡提示">
       <div id="buff-bar" class="buff-bar" aria-live="polite"></div>
+      <span id="rock-drip-chip" class="rock-drip-chip hidden" title="距离下一次定时落石或移石的时间">🪨 落石 12.0s</span>
       <div id="level-banner" class="level-banner hidden" aria-live="polite">关卡提升！注意新障碍预警</div>
     </section>
 
     <section class="board-stage" aria-label="游戏画布区域">
       <canvas id="game-canvas" width="400" height="400"></canvas>
 
-      <!-- 每 4 关三选一强化面板 -->
+      <!-- 每 3 关三选一强化面板 -->
       <div id="upgrade-overlay" class="upgrade-overlay hidden" role="dialog" aria-labelledby="upgrade-title">
         <div class="upgrade-header">
-          <span id="upgrade-badge" class="upgrade-badge">Lv.4 里程碑奖励</span>
+          <span id="upgrade-badge" class="upgrade-badge">Lv.3 里程碑奖励</span>
           <h2 id="upgrade-title" class="upgrade-title">选择一项能力强化</h2>
         </div>
         <div id="upgrade-list" class="upgrade-list"></div>
@@ -62,13 +77,13 @@
       <!-- 开始 / 暂停 / 结束遮罩 -->
       <div id="board-overlay" class="board-overlay">
         <h2 id="overlay-title" class="overlay-title">准备出发</h2>
-        <p id="overlay-desc" class="overlay-desc">挑战全部 20 关！升级分数随关卡分段递增，每逢 4 关可三选一强化自身能力。</p>
+        <p id="overlay-desc" class="overlay-desc">挑战全部 20 关！升级分数随关卡分段递增，每逢 3 关可三选一强化自身能力。</p>
 
         <!-- 首次开局核心机制速览 -->
         <div id="overlay-tips" class="overlay-tips">
           <div class="tip-row"><span class="tip-icon lives">♥</span><span>共 3 点生命：撞墙停在原地扣 1 命并短暂无敌；撞碎石扣 1 命并撞碎该石</span></div>
-          <div class="tip-row"><span class="tip-icon warn">!</span><span>红色闪烁格为落石预警，未落下前可安全穿过；Lv.3 起会定时落石；9 种随机道具随关卡逐步解锁</span></div>
-          <div class="tip-row"><span class="tip-icon rare">✦</span><span>每 4 关三选一（灰普通 · 蓝罕见 · 紫稀有 · 橙传说），选完自动暂停方便观察走位</span></div>
+          <div class="tip-row"><span class="tip-icon warn">!</span><span>红色闪烁格为落石预警，未落下前可安全穿过；Lv.3 起会定时落石/移石；9 种道具随关卡解锁</span></div>
+          <div class="tip-row"><span class="tip-icon rare">✦</span><span>每 3 关三选一（灰普通 · 蓝罕见 · 紫稀有 · 橙传说），选完自动暂停方便观察走位</span></div>
         </div>
 
         <!-- 结算战绩统计面板 -->
