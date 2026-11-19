@@ -228,7 +228,7 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     getSnapshot: () => JSON.parse(JSON.stringify({
       state, difficulty, hardClearCount, level, endlessMode, activeMutator, bestEndlessLevel, score, lives, maxLives, scoreMultiplier, buffBonusSec, slowUpgradeCount, baseStepInterval,
       snake, pendingGrowth, obstacles, food, powerUp, lastPowerUpType, invulnTimer, doubleTimer, shieldTimer, ghostTimer, freezeTimer,
-      comboCount, comboTimer, hasPhaseBody, hasLevelFreeze,
+      comboCount, comboTimer, hasPhaseBody, phaseBodyCooldown, hasLevelFreeze,
       nirvanaCharges, nirvanaUsed, shakeTimer, hitstopTimer,
       rocksSmashed, runElapsedSec, pickedUpgrades, pendingUpgradeLevels,
       blastExpertLevel, hasStoneFeast, stoneFeastProgress,
@@ -252,6 +252,7 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
       if (patch.ghostTimer !== undefined) ghostTimer = patch.ghostTimer;
       if (patch.freezeTimer !== undefined) freezeTimer = patch.freezeTimer;
       if (patch.invulnTimer !== undefined) invulnTimer = patch.invulnTimer;
+      if (patch.phaseBodyCooldown !== undefined) phaseBodyCooldown = patch.phaseBodyCooldown;
       if (patch.obstacles !== undefined) obstacles = patch.obstacles;
       if (patch.powerUp !== undefined) powerUp = patch.powerUp;
       if (patch.lastPowerUpType !== undefined) lastPowerUpType = patch.lastPowerUpType;
@@ -671,28 +672,99 @@ snap = g.getSnapshot();
 assert.strictEqual(snap.freezeTimer, 3.0);
 assert.strictEqual(snap.obstacles.find((o) => o.warnTimer > 0).warnTimer, warnBefore, '时停期间落石预警应冻结');
 
-// 7c. 相位穿身 (phase_body)
+// 7c. 相位穿身 (phase_body)：保留稀有度，每 10 秒充能 1 次，撞自身免伤并触发 2 秒幽灵脱困
 g.startGame();
 const phaseCard = g.UPGRADE_POOL.find((u) => u.id === 'phase_body');
+assert.strictEqual(phaseCard.rarity, 'rare', '相位穿身保持稀有度');
 phaseCard.apply();
+assert.strictEqual(phaseCard.canPick(), false, '相位穿身不可重复抽取');
+assert.strictEqual(g.getSnapshot().phaseBodyCooldown, 0, '获取相位穿身后立即就绪');
+
+const selfTrapSnake = () => ([
+  { x: 6, y: 6 },
+  { x: 6, y: 7 },
+  { x: 7, y: 7 },
+  { x: 7, y: 6 },
+  { x: 7, y: 5 },
+  { x: 6, y: 5 }
+]);
+
 g.setTestState({
   level: 12,
-  // 蛇头在 (6,6) 向右走，(7,6) 是自身第 3 节身体
-  snake: [
-    { x: 6, y: 6 },
-    { x: 6, y: 7 },
-    { x: 7, y: 7 },
-    { x: 7, y: 6 },
-    { x: 7, y: 5 },
-    { x: 6, y: 5 }
-  ],
+  snake: selfTrapSnake(),
   direction: { x: 1, y: 0 },
   obstacles: [],
   food: { x: 18, y: 18 }
 });
-assert.strictEqual(g.isPowerUpEligible('ghost'), false, '拥有永久相位穿身后不再刷新幽灵道具');
+assert.strictEqual(g.isPowerUpEligible('ghost'), true, '冷却式相位穿身应保留 Lv.10+ 幽灵道具刷新');
+
+// 1) 就绪时撞自身 -> 免伤 + 自动触发 2s 幽灵穿身 + 进入 10s 冷却
 g.stepGame();
-assert.strictEqual(g.getSnapshot().lives, 3, '相位穿身穿过自身身体不应扣血');
+snap = g.getSnapshot();
+assert.strictEqual(snap.lives, 3, '相位就绪撞自身不应扣血');
+assert.strictEqual(snap.damageStats.self, 0, '相位脱困不应计入撞自身受击');
+assert.strictEqual(snap.ghostTimer, 2.0, '触发相位脱困应获得 2 秒幽灵穿身窗口');
+assert.strictEqual(snap.phaseBodyCooldown, 10.0, '触发后应进入 10 秒充能冷却');
+
+// 2) 2 秒幽灵窗口内再次穿身 -> 安全脱困且不扣血
+g.setTestState({
+  snake: selfTrapSnake(),
+  direction: { x: 1, y: 0 },
+  obstacles: [],
+  food: { x: 18, y: 18 }
+});
+g.stepGame();
+snap = g.getSnapshot();
+assert.strictEqual(snap.lives, 3, '2 秒幽灵脱困窗口内再次穿过自身不应扣血');
+assert.strictEqual(snap.phaseBodyCooldown, 10.0, '幽灵窗口内穿身不应重置冷却');
+
+// 3) 2.5 秒后幽灵失效但仍处于冷却（剩余 7.5s）-> 撞自身应正常扣血
+g.updateTimers(2.5);
+snap = g.getSnapshot();
+assert.strictEqual(snap.ghostTimer, 0, '2.5 秒后幽灵脱困窗口应结束');
+assert.strictEqual(snap.phaseBodyCooldown, 7.5, '冷却应倒计时至 7.5 秒');
+g.setTestState({
+  snake: selfTrapSnake(),
+  direction: { x: 1, y: 0 },
+  obstacles: [],
+  food: { x: 18, y: 18 }
+});
+g.stepGame();
+snap = g.getSnapshot();
+assert.strictEqual(snap.lives, 2, '冷却期间撞自身应正常扣 1 点生命');
+assert.strictEqual(snap.damageStats.self, 1, '冷却期间撞自身应记为 self 受击');
+
+// 4) 再过 7.6 秒充能完毕且无敌结束 -> 再次撞自身可重新触发相位脱困
+g.updateTimers(7.6);
+snap = g.getSnapshot();
+assert.strictEqual(snap.phaseBodyCooldown, 0, '10 秒后相位护体应重新就绪');
+assert.strictEqual(snap.invulnTimer, 0);
+g.setTestState({
+  snake: selfTrapSnake(),
+  direction: { x: 1, y: 0 },
+  obstacles: [],
+  food: { x: 18, y: 18 }
+});
+g.stepGame();
+snap = g.getSnapshot();
+assert.strictEqual(snap.lives, 2, '充能就绪后再次撞自身应免伤脱困');
+assert.strictEqual(snap.ghostTimer, 2.0, '二次触发同样提供 2 秒幽灵窗口');
+assert.strictEqual(snap.phaseBodyCooldown, 10.0, '二次触发后重新进入 10 秒冷却');
+
+// 5) 身上已有幽灵道具且相位就绪时撞自身 -> 优先使用幽灵状态，不浪费相位充能
+g.setTestState({
+  snake: selfTrapSnake(),
+  direction: { x: 1, y: 0 },
+  obstacles: [],
+  food: { x: 18, y: 18 },
+  ghostTimer: 6.5,
+  phaseBodyCooldown: 0
+});
+g.stepGame();
+snap = g.getSnapshot();
+assert.strictEqual(snap.lives, 2, '幽灵道具激活期间穿身不扣血');
+assert.strictEqual(snap.phaseBodyCooldown, 0, '已有幽灵道具时穿身不应浪费相位护体充能');
+assert.strictEqual(snap.ghostTimer, 6.5, '已有更长幽灵时长应保持不变');
 
 // 7d. 涅槃 (nirvana)
 g.startGame();

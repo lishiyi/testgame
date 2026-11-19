@@ -327,7 +327,7 @@ function drawSnakeEyes(head) {
 
 function drawSnake(timestamp) {
   const total = snake.length;
-  const isPhase = hasPhaseBody || ghostTimer > 0;
+  const isPhase = (hasPhaseBody && phaseBodyCooldown <= 0) || ghostTimer > 0;
   const hue = iceTimer > 0 ? 178 : (ghostTimer > 0 ? 256 : 152);
   const invulnFlash = invulnTimer > 0 && Math.sin(timestamp * 0.03) < 0;
 

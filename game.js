@@ -85,6 +85,7 @@ let magnetLevel = 0;
 let comboUpgradeLevel = 0;
 let hasLevelFreeze = false;
 let hasPhaseBody = false;
+let phaseBodyCooldown = 0;    // 「相位穿身」冷却剩余时间 (秒，0 表示就绪)
 let nirvanaCharges = 0;
 let nirvanaUsed = false;
 let blastExpertLevel = 0;     // 「爆破专家」是否已获得（0/1，不可叠加）
@@ -323,12 +324,12 @@ const UPGRADE_POOL = [
     id: 'phase_body',
     name: '相位穿身',
     rarity: 'rare',
-    getDesc: () => '撞自己不扣血，永久自由穿过自身身体',
+    getDesc: () => `每 ${PHASE_BODY_COOLDOWN} 秒充能 1 次：撞到自身时免伤并自动触发 ${PHASE_BODY_DURATION} 秒幽灵穿身脱困`,
     canPick: () => !hasPhaseBody,
     apply: () => {
       hasPhaseBody = true;
-      ghostTimer = 0;
-      addFloatingText(snake[0].x, snake[0].y, '永久相位穿身!', 'hsl(276, 96%, 82%)');
+      phaseBodyCooldown = 0;
+      addFloatingText(snake[0].x, snake[0].y, '相位护体就绪!', 'hsl(276, 96%, 82%)');
     }
   },
   {
@@ -803,6 +804,7 @@ function initGameData() {
   comboUpgradeLevel = 0;
   hasLevelFreeze = false;
   hasPhaseBody = false;
+  phaseBodyCooldown = 0;
   nirvanaCharges = 0;
   nirvanaUsed = false;
   blastExpertLevel = 0;
@@ -1168,10 +1170,15 @@ function renderBuffBar() {
   if (iceTimer > 0) {
     pills.push(`<span class="buff-pill" style="border-color: hsl(196, 80%, 52%); color: hsl(196, 92%, 76%);">减速 ${iceTimer.toFixed(1)}s</span>`);
   }
-  if (hasPhaseBody) {
-    pills.push('<span class="buff-pill" style="border-color: hsl(276, 82%, 64%); color: hsl(276, 96%, 82%);">相位穿身</span>');
-  } else if (ghostTimer > 0) {
+  if (ghostTimer > 0) {
     pills.push(`<span class="buff-pill" style="border-color: hsl(258, 82%, 68%); color: hsl(258, 96%, 84%);">幽灵 ${ghostTimer.toFixed(1)}s</span>`);
+  }
+  if (hasPhaseBody) {
+    if (phaseBodyCooldown <= 0) {
+      pills.push('<span class="buff-pill" style="border-color: hsl(276, 82%, 64%); color: hsl(276, 96%, 82%);">相位就绪</span>');
+    } else {
+      pills.push(`<span class="buff-pill" style="border-color: hsla(276, 40%, 54%, 0.55); color: hsl(276, 35%, 72%);">相位 ${phaseBodyCooldown.toFixed(1)}s</span>`);
+    }
   }
   if (comboUpgradeLevel > 0 && comboCount >= 2 && comboTimer > 0) {
     pills.push(`<span class="buff-pill" style="border-color: hsl(46, 96%, 54%); color: hsl(48, 100%, 76%);">连击 x${comboCount}</span>`);
@@ -1295,7 +1302,6 @@ function isPowerUpEligible(type) {
   if (type === 'heart') return lives < maxLives;
   if (type === 'bomb') return obstacles.length >= 2;
   if (type === 'scissors') return snake.length >= 6;
-  if (type === 'ghost') return !hasPhaseBody;
   if (type === 'chest') return UPGRADE_POOL.some((u) => u.canPick());
   return true;
 }
@@ -1599,11 +1605,21 @@ function stepGame() {
   );
   const willGrowThisStep = willEatFood || pendingGrowth > 0;
 
-  // 3. 撞自身检测（无敌、幽灵相位道具或永久「相位穿身」时免疫自身碰撞）
+  // 3. 撞自身检测（无敌或幽灵相位期间免伤；若持有「相位穿身」且冷却就绪，自动免伤并触发 2s 幽灵脱困）
   const bodyToCheck = willGrowThisStep ? snake : snake.slice(0, -1);
-  const canPhaseSelf = invulnTimer > 0 || ghostTimer > 0 || hasPhaseBody;
-  if (!canPhaseSelf && bodyToCheck.some((seg) => seg.x === nextX && seg.y === nextY)) {
-    if (!takeDamage(nextX, nextY, 'self')) return;
+  if (bodyToCheck.some((seg) => seg.x === nextX && seg.y === nextY)) {
+    if (invulnTimer > 0 || ghostTimer > 0) {
+      // 已有无敌或幽灵穿身状态：直接穿过，不消耗相位护体充能
+    } else if (hasPhaseBody && phaseBodyCooldown <= 0) {
+      ghostTimer = Math.max(ghostTimer, PHASE_BODY_DURATION);
+      phaseBodyCooldown = PHASE_BODY_COOLDOWN;
+      playTone('powerup');
+      spawnBurst(nextX, nextY, '276, 92%, 76%', 14);
+      addFloatingText(nextX, nextY, `相位脱困 ${PHASE_BODY_DURATION}s!`, 'hsl(276, 96%, 82%)');
+      renderBuffBar();
+    } else {
+      if (!takeDamage(nextX, nextY, 'self')) return;
+    }
   }
 
   // 4. 推进蛇头
@@ -1684,6 +1700,11 @@ function updateTimers(dtSeconds) {
 
   if (ghostTimer > 0) {
     ghostTimer = Math.max(0, ghostTimer - dtSeconds);
+    buffChanged = true;
+  }
+
+  if (phaseBodyCooldown > 0) {
+    phaseBodyCooldown = Math.max(0, phaseBodyCooldown - dtSeconds);
     buffChanged = true;
   }
 
