@@ -9,23 +9,55 @@ const INITIAL_INTERVAL = 140;       // Lv.1 初始每步间隔 (毫秒)
 const SPEED_GAIN_PER_LEVEL = 0.04;  // 每升 1 级速度倍率提升 0.04（隐藏属性）
 const SLOW_UPGRADE_STEP = 0.20;     // 每次减速强化降低的速度倍率
 const MIN_SPEED_MULT = 0.70;        // 隐藏速度倍率最低下限
-const POINTS_PER_LEVEL = 50;        // 初始每级基础升级分数（Lv.1–5）
+const POINTS_PER_LEVEL = 60;        // 初始每级基础升级分数（Lv.1–5）
 const CLEAR_LEVEL = 20;             // 达到第 20 关即判定通关胜利
 const UPGRADE_EVERY_LEVELS = 3;     // 每逢 3 的倍数关卡触发一次三选一强化
-const ENDLESS_MUTATOR_EVERY_LEVELS = 5; // 无尽模式每 5 关轮换一次场地词缀
+const ENDLESS_MUTATOR_EVERY_LEVELS = 5; // 场地词缀每 5 关轮换一次
 const BASE_MAX_OBSTACLES = 18;      // 前中期场上基础岩石数量上限（Lv.1–7）
 const HARD_MAX_OBSTACLES = 36;      // 高关卡动态岩石数量封顶上限
-const INITIAL_LIVES = 3;            // 初始生命值与初始上限
-const HARD_MAX_LIVES = 6;           // 强化可提升的最大生命硬上限
+const INITIAL_LIVES = 3;            // 标准模式初始生命值与初始上限
+const HARD_MAX_LIVES = 6;           // 标准模式强化可提升的最大生命硬上限
 const INVULN_DURATION = 2.0;        // 受伤后的短暂无敌保护时间 (秒)
 const NIRVANA_INVULN_DURATION = 3.0;// 涅槃重生后的无敌保护时间 (秒)
 const LEVEL_FREEZE_DURATION = 4.0;  // 「时停」每关开始冻结时长 (秒)
 const COMBO_WINDOW = 5.0;           // 「连击」连续吃果有效时间窗口 (秒)
 const MAX_COMBO_COUNT = 5;          // 「连击」最高叠加层数上限
+const BERSERK_SPEED_BONUS = 0.15;   // 双刃卡「极速猎手」永久速度倍率加成
 const SHAKE_DURATION = 0.22;        // 受击屏幕震动持续时间 (秒)
 const HITSTOP_DURATION = 0.045;     // 拾取道具瞬间微顿帧时长 (秒)
 const STORAGE_KEY = 'classic_snake_best_score_v2';
 const ENDLESS_LEVEL_STORAGE_KEY = 'classic_snake_best_endless_lv_v1';
+const HARD_CLEAR_STORAGE_KEY = 'classic_snake_hard_clears_v1';
+
+// 开局难度模式配置（标准 / 困难）
+const DIFFICULTY_CONFIG = {
+  standard: {
+    id: 'standard',
+    label: '标准模式',
+    shortLabel: '标准',
+    initialLives: INITIAL_LIVES,
+    hardMaxLives: HARD_MAX_LIVES,
+    initialSpeedMult: 1.0,
+    speedGainMult: 1.0,
+    warnDuration: 2.2,
+    rockDripMult: 1.0,
+    mutatorStartLevel: 15,
+    summary: '3 命 · 预警 2.2s · Lv.15 开启主线词缀'
+  },
+  hard: {
+    id: 'hard',
+    label: '困难模式',
+    shortLabel: '困难',
+    initialLives: 2,
+    hardMaxLives: 5,
+    initialSpeedMult: 1.08,
+    speedGainMult: 1.25,
+    warnDuration: 1.5,
+    rockDripMult: 0.8,
+    mutatorStartLevel: 10,
+    summary: '2 命 · 移速 +25% · 预警 1.5s · 落石加快 · Lv.10 开启词缀'
+  }
+};
 
 // 9 种场上随机道具配置（按关卡逐步解锁）
 const POWERUP_TYPES = {
@@ -115,11 +147,11 @@ const RARITY_CONFIG = {
   legendary: { label: '传说', weight: 1 }
 };
 
-// 分段升级门槛：Lv.1–5 每级 50 分，Lv.6–12 每级 75 分，Lv.13–19 每级 100 分，Lv.20+ 无尽每级 125 分
+// 分段升级门槛：Lv.1–5 每级 60 分，Lv.6–12 每级 90 分，Lv.13–19 每级 130 分，Lv.20+ 无尽每级 160 分
 function getPointsForNextLevel(lv) {
-  if (lv >= CLEAR_LEVEL) return 125;
-  if (lv >= 13) return 100;
-  if (lv >= 6) return 75;
+  if (lv >= CLEAR_LEVEL) return 160;
+  if (lv >= 13) return 130;
+  if (lv >= 6) return 90;
   return POINTS_PER_LEVEL;
 }
 
@@ -147,7 +179,7 @@ function getFoodBasePoints(lv) {
   return Math.min(24, 10 + tier * 2);
 }
 
-// 无尽模式每 5 关轮换的场地变化词缀
+// 主线高关卡与无尽模式共用的场地变化词缀（标准 Lv.15 / 困难 Lv.10 激活，每 5 关轮换）
 const ENDLESS_MUTATORS = {
   moving_food: {
     id: 'moving_food',
@@ -220,7 +252,7 @@ function formatDuration(seconds) {
   return `${total}秒`;
 }
 
-// 本地最高分与无尽最高关卡存取
+// 本地最高分、无尽最高关卡与困难通关次数存取
 function loadBestScore() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -250,6 +282,23 @@ function loadBestEndlessLevel() {
 function saveBestEndlessLevel(value) {
   try {
     localStorage.setItem(ENDLESS_LEVEL_STORAGE_KEY, String(value));
+  } catch {
+    // 忽略存储异常
+  }
+}
+
+function loadHardClearCount() {
+  try {
+    const saved = localStorage.getItem(HARD_CLEAR_STORAGE_KEY);
+    return saved ? Math.max(0, parseInt(saved, 10) || 0) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveHardClearCount(value) {
+  try {
+    localStorage.setItem(HARD_CLEAR_STORAGE_KEY, String(value));
   } catch {
     // 忽略存储异常
   }

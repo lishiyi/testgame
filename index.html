@@ -11,7 +11,10 @@
   <main class="game-shell" aria-label="贪吃蛇游戏主界面">
     <header class="game-header">
       <div class="brand-group">
-        <h1>经典贪吃蛇 · 进阶版</h1>
+        <div class="brand-title-row">
+          <h1>经典贪吃蛇 · 进阶版</h1>
+          <span id="mode-badge" class="mode-badge hidden">🔥 困难</span>
+        </div>
         <p class="brand-subtitle">收集道具突破 20 关，每逢 3 关解锁专属强化</p>
       </div>
       <div class="header-actions">
@@ -41,7 +44,7 @@
 
     <section class="progress-strip" aria-label="升级进度与状态信息">
       <div class="progress-meta">
-        <span id="next-level-hint" class="progress-hint">距 Lv.2 还差 50 分</span>
+        <span id="next-level-hint" class="progress-hint">距 Lv.2 还差 60 分</span>
         <span class="progress-meta-right">
           <span id="next-upgrade-hint">下次强化 Lv.3</span>
           <span class="meta-dot">·</span>
@@ -77,13 +80,22 @@
       <!-- 开始 / 暂停 / 结束遮罩 -->
       <div id="board-overlay" class="board-overlay">
         <h2 id="overlay-title" class="overlay-title">准备出发</h2>
-        <p id="overlay-desc" class="overlay-desc">挑战全部 20 关！升级分数随关卡分段递增，每逢 3 关可三选一强化自身能力。</p>
+        <p id="overlay-desc" class="overlay-desc">挑战全部 20 关！每逢 3 关三选一强化，后期将激活阶段场地词缀。</p>
+
+        <!-- 标准 / 困难开局模式切换 -->
+        <div id="mode-selector" class="mode-selector" role="group" aria-label="难度模式选择">
+          <div class="mode-toggle">
+            <button id="mode-standard-btn" class="mode-btn active" type="button" data-mode="standard">标准模式</button>
+            <button id="mode-hard-btn" class="mode-btn" type="button" data-mode="hard">困难模式</button>
+          </div>
+          <p id="mode-desc" class="mode-desc">3 命 · 预警 2.2s · Lv.15 开启主线词缀</p>
+        </div>
 
         <!-- 首次开局核心机制速览 -->
         <div id="overlay-tips" class="overlay-tips">
-          <div class="tip-row"><span class="tip-icon lives">♥</span><span>共 3 点生命：撞墙停在原地扣 1 命并短暂无敌；撞碎石扣 1 命并撞碎该石</span></div>
-          <div class="tip-row"><span class="tip-icon warn">!</span><span>红色闪烁格为落石预警，未落下前可安全穿过；Lv.3 起会定时落石/移石；9 种道具随关卡解锁</span></div>
-          <div class="tip-row"><span class="tip-icon rare">✦</span><span>每 3 关三选一（灰普通 · 蓝罕见 · 紫稀有 · 橙传说），选完自动暂停方便观察走位</span></div>
+          <div class="tip-row"><span class="tip-icon lives">♥</span><span>撞墙停在原地扣 1 命并短暂无敌；撞碎石扣 1 命并撞碎该石，开盾可主动撞石连击</span></div>
+          <div class="tip-row"><span class="tip-icon warn">!</span><span>Lv.3 起定时落石（满额移石）；高关卡提前激活场地词缀，带来阶段 Boss 压迫感</span></div>
+          <div class="tip-row"><span class="tip-icon rare">✦</span><span>每 3 关三选一（含高风险双刃卡），选完自动暂停方便观察走位</span></div>
         </div>
 
         <!-- 结算战绩统计面板 -->

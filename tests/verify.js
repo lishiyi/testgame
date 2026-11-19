@@ -187,6 +187,8 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     LEVEL_FREEZE_DURATION,
     COMBO_WINDOW,
     MAX_COMBO_COUNT,
+    BERSERK_SPEED_BONUS,
+    DIFFICULTY_CONFIG,
     ENDLESS_MUTATORS,
     POWERUP_TYPES,
     UPGRADE_POOL,
@@ -196,6 +198,8 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     getLevelForScore,
     getFoodBasePoints,
     loadBestEndlessLevel,
+    loadHardClearCount,
+    setDifficulty,
     getRocksForLevel,
     getRockDripInterval,
     getEffectiveRockDripInterval,
@@ -222,12 +226,13 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     gameLoop,
     renderScene,
     getSnapshot: () => JSON.parse(JSON.stringify({
-      state, level, endlessMode, activeMutator, bestEndlessLevel, score, lives, maxLives, scoreMultiplier, buffBonusSec, slowUpgradeCount, baseStepInterval,
-      snake, obstacles, food, powerUp, lastPowerUpType, invulnTimer, doubleTimer, shieldTimer, ghostTimer, freezeTimer,
+      state, difficulty, hardClearCount, level, endlessMode, activeMutator, bestEndlessLevel, score, lives, maxLives, scoreMultiplier, buffBonusSec, slowUpgradeCount, baseStepInterval,
+      snake, pendingGrowth, obstacles, food, powerUp, lastPowerUpType, invulnTimer, doubleTimer, shieldTimer, ghostTimer, freezeTimer,
       comboCount, comboTimer, hasPhaseBody, hasLevelFreeze,
       nirvanaCharges, nirvanaUsed, shakeTimer, hitstopTimer,
       rocksSmashed, runElapsedSec, pickedUpgrades, pendingUpgradeLevels,
       blastExpertLevel, hasStoneFeast, stoneFeastProgress,
+      hasGreedyMaw, extraFoodGrowth, hasBerserkRush,
       damageStats, lastHitCause, rockDripTimer, foodMoveTimer
     })),
     spawnPowerUp,
@@ -254,6 +259,9 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
       if (patch.blastExpertLevel !== undefined) blastExpertLevel = patch.blastExpertLevel;
       if (patch.hasStoneFeast !== undefined) hasStoneFeast = patch.hasStoneFeast;
       if (patch.stoneFeastProgress !== undefined) stoneFeastProgress = patch.stoneFeastProgress;
+      if (patch.hasGreedyMaw !== undefined) hasGreedyMaw = patch.hasGreedyMaw;
+      if (patch.extraFoodGrowth !== undefined) extraFoodGrowth = patch.extraFoodGrowth;
+      if (patch.hasBerserkRush !== undefined) hasBerserkRush = patch.hasBerserkRush;
       if (patch.comboUpgradeLevel !== undefined) comboUpgradeLevel = patch.comboUpgradeLevel;
       if (patch.comboCount !== undefined) comboCount = patch.comboCount;
       if (patch.comboTimer !== undefined) comboTimer = patch.comboTimer;
@@ -268,23 +276,24 @@ vm.createContext(env.sandbox);
 vm.runInContext(combinedRepoCode, env.sandbox);
 const g = env.sandbox.__game;
 
-// 2. 校验分段升级门槛（50 / 75 / 100 / 125）、动态碎石上限与阶梯增量
-assert.strictEqual(g.getPointsForNextLevel(1), 50);
-assert.strictEqual(g.getPointsForNextLevel(5), 50);
-assert.strictEqual(g.getPointsForNextLevel(6), 75);
-assert.strictEqual(g.getPointsForNextLevel(12), 75);
-assert.strictEqual(g.getPointsForNextLevel(13), 100);
-assert.strictEqual(g.getPointsForNextLevel(19), 100);
-assert.strictEqual(g.getPointsForNextLevel(20), 125);
+// 2. 校验分段升级门槛（60 / 90 / 130 / 160）、动态碎石上限与阶梯增量
+assert.strictEqual(g.getPointsForNextLevel(1), 60);
+assert.strictEqual(g.getPointsForNextLevel(5), 60);
+assert.strictEqual(g.getPointsForNextLevel(6), 90);
+assert.strictEqual(g.getPointsForNextLevel(12), 90);
+assert.strictEqual(g.getPointsForNextLevel(13), 130);
+assert.strictEqual(g.getPointsForNextLevel(19), 130);
+assert.strictEqual(g.getPointsForNextLevel(20), 160);
 assert.strictEqual(g.getScoreForLevel(1), 0);
-assert.strictEqual(g.getScoreForLevel(6), 250);
-assert.strictEqual(g.getScoreForLevel(13), 775);
-assert.strictEqual(g.getScoreForLevel(18), 1275);
-assert.strictEqual(g.getScoreForLevel(20), 1475);
-assert.strictEqual(g.getScoreForLevel(22), 1725);
-assert.strictEqual(g.getLevelForScore(249), 5);
-assert.strictEqual(g.getLevelForScore(250), 6);
-assert.strictEqual(g.getLevelForScore(1475), 20);
+assert.strictEqual(g.getScoreForLevel(6), 300);
+assert.strictEqual(g.getScoreForLevel(13), 930);
+assert.strictEqual(g.getScoreForLevel(18), 1580);
+assert.strictEqual(g.getScoreForLevel(20), 1840);
+assert.strictEqual(g.getScoreForLevel(21), 2000);
+assert.strictEqual(g.getScoreForLevel(22), 2160);
+assert.strictEqual(g.getLevelForScore(299), 5);
+assert.strictEqual(g.getLevelForScore(300), 6);
+assert.strictEqual(g.getLevelForScore(1840), 20);
 
 assert.strictEqual(g.getMaxObstacles(1), 18);
 assert.strictEqual(g.getMaxObstacles(7), 18);
@@ -345,12 +354,12 @@ assert.strictEqual(`${relocatedSnap.obstacles[0].x},${relocatedSnap.obstacles[0]
 assert(relocatedSnap.obstacles[17].warnTimer > 0, '新挪动落下的石头应带 2.2s 红色预警');
 assert.strictEqual(relocatedSnap.rocksSmashed, 0, '移石不应计入玩家击碎石头数');
 
-// 达到满额 36 块后升级不再显示红色落石警示
+// 达到满额 36 块后升级（非词缀关）不再显示红色落石警示
 g.startGame();
 const fullRocks = Array.from({ length: 36 }, (_, i) => ({ x: (i % 16) + 2, y: Math.floor(i / 16) + 2, warnTimer: 0 }));
-g.setTestState({ obstacles: fullRocks, score: g.getScoreForLevel(18) }); // 升至 Lv.18
+g.setTestState({ obstacles: fullRocks, score: g.getScoreForLevel(14) }); // 升至 Lv.14
 g.checkLevelUp();
-assert.strictEqual(g.getSnapshot().level, 18);
+assert.strictEqual(g.getSnapshot().level, 14);
 assert.strictEqual(env.getEl('level-banner').classList.contains('hidden'), true);
 
 // 3. 校验切出页面 / 窗口失焦自动暂停
@@ -449,8 +458,8 @@ for (let i = 0; i < 100; i++) {
   prevType = spawnedType;
 }
 
-// 6. 校验 14 张强化词条池、传说稀有度权重（稀有的一半）及核心数值
-assert.strictEqual(g.UPGRADE_POOL.length, 14, '词条池应扩展为 14 项');
+// 6. 校验 16 张强化词条池（含 2 张双刃卡）、传说稀有度权重（稀有的一半）及核心数值
+assert.strictEqual(g.UPGRADE_POOL.length, 16, '词条池应扩展为 16 项（含 2 张双刃卡）');
 assert.strictEqual(g.RARITY_CONFIG.legendary.weight * 2, g.RARITY_CONFIG.rare.weight, '传说稀有度单卡权重应为稀有的一半');
 assert(
   g.RARITY_CONFIG.legendary.weight < g.RARITY_CONFIG.rare.weight &&
@@ -463,7 +472,7 @@ assert(
 g.startGame();
 g.setTestState({ snake: Array.from({ length: 8 }, (_, i) => ({ x: 10 - i, y: 10 })) });
 const pickCounts = { common: 0, uncommon: 0, rare: 0, legendary: 0 };
-const cardPoolCounts = { common: 5, uncommon: 5, rare: 3, legendary: 1 };
+const cardPoolCounts = { common: 5, uncommon: 6, rare: 4, legendary: 1 };
 for (let i = 0; i < 6000; i++) {
   for (const c of g.pickWeightedUpgrades(3)) {
     pickCounts[c.rarity]++;
@@ -650,7 +659,7 @@ const freezeCard = g.UPGRADE_POOL.find((u) => u.id === 'level_freeze');
 assert(freezeCard.getDesc().includes('4 秒'), '时停描述应包含 4 秒');
 freezeCard.apply();
 g.setTestState({
-  score: 50,
+  score: 60,
   powerUp: { x: 12, y: 12, type: 'gold', ttl: 8.0, maxTtl: 9.5 }
 });
 g.checkLevelUp(); // 升至 Lv.2，触发 4 秒时停
@@ -957,19 +966,19 @@ assert.strictEqual(g.getSnapshot().score, 20, '碎石狂潮词缀下护盾撞碎
 
 // 11e. P3 HUD 进度条、蛇长预警、落石倒计时胶囊与结算死因受击统计
 g.startGame();
-assert.strictEqual(env.getEl('next-level-hint').textContent, '距 Lv.2 还差 50 分');
+assert.strictEqual(env.getEl('next-level-hint').textContent, '距 Lv.2 还差 60 分');
 assert.strictEqual(env.getEl('snake-len-value').textContent, '蛇长 3 节');
 assert.strictEqual(env.getEl('rock-drip-chip').classList.contains('hidden'), true, 'Lv.1 不显示落石倒计时胶囊');
 
 g.setTestState({
   level: 3,
-  score: 125, // Lv.3 起始 100 分，再差 25 分升 Lv.4（进度 50%）
+  score: 150, // Lv.3 起始 120 分，再差 30 分升 Lv.4（进度 50%）
   snake: Array.from({ length: 32 }, (_, i) => ({ x: i % 20, y: Math.floor(i / 20) })),
   rockDripTimer: 10.0 // 距 12s 落石还剩 2.0s（imminent）
 });
 g.updateHUD();
 g.renderRockDripChip();
-assert.strictEqual(env.getEl('next-level-hint').textContent, '距 Lv.4 还差 25 分');
+assert.strictEqual(env.getEl('next-level-hint').textContent, '距 Lv.4 还差 30 分');
 assert.strictEqual(env.getEl('level-progress-fill').style.width, '50%');
 assert.strictEqual(env.getEl('snake-len-value').textContent, '蛇长 32 节');
 assert.strictEqual(env.getEl('snake-len-value').classList.contains('warn'), true, '30 节以上蛇长应显示 warn 样式');
@@ -1018,17 +1027,134 @@ assert(summaryHtml.includes('死因：撞自身'), '结算面板应明确显示�
 assert(summaryHtml.includes('撞墙 1 · 撞石 1 · 撞自身 1'), '结算面板应显示受击分类统计');
 assert(summaryHtml.includes('Lv.25'), '结算面板应显示持久化的无尽最高关卡纪录');
 
-// 再次重置验证通关战绩分享文本
+// 12. 校验主线高关卡词缀前置、双刃剑强化卡与标准/困难模式切换
+// 12a. 标准模式主线 Lv.15 开启场地词缀（非无尽模式同样生效）
+g.setDifficulty('standard');
 g.startGame();
+g.setTestState({ score: g.getScoreForLevel(14) });
+g.checkLevelUp();
+assert.strictEqual(g.getSnapshot().activeMutator, null, '标准模式 Lv.14 尚未激活主线词缀');
+g.setTestState({ score: g.getScoreForLevel(15) });
+g.checkLevelUp();
+snap = g.getSnapshot();
+assert.strictEqual(snap.endlessMode, false);
+assert(snap.activeMutator && g.ENDLESS_MUTATORS[snap.activeMutator], '标准模式主线 Lv.15 应激活场地词缀');
+assert(env.getEl('buff-bar').innerHTML.includes('词缀·'), '主线词缀应在状态条中展示');
+assert(env.getEl('level-banner').textContent.includes('精英阶段·词缀激活'), '首次激活主线词缀应弹出精英阶段横幅');
+
+// 校验主线（endlessMode=false）下词缀效果实际生效（碎石狂潮）
+g.setTestState({
+  activeMutator: 'fragile_aegis',
+  endlessMode: false,
+  shieldTimer: 0,
+  buffBonusSec: 0,
+  score: 0,
+  snake: [{ x: 8, y: 10 }, { x: 7, y: 10 }, { x: 6, y: 10 }],
+  direction: { x: 1, y: 0 },
+  obstacles: [{ x: 10, y: 10, warnTimer: 0 }],
+  powerUp: { x: 9, y: 10, type: 'shield', ttl: 8, maxTtl: 9.5 },
+  food: { x: 18, y: 18 }
+});
+g.stepGame();
+assert.strictEqual(g.getSnapshot().shieldTimer, 3.75, '主线激活碎石狂潮时拾取护盾时长同样减半');
+g.stepGame();
+assert.strictEqual(g.getSnapshot().score, 20, '主线激活碎石狂潮时碎石基础分同样 ×2');
+
+// 12b. 双刃剑强化卡「狂暴胃口」与「极速猎手」
+const greedyCard = g.UPGRADE_POOL.find((u) => u.id === 'greedy_maw');
+assert(greedyCard && greedyCard.rarity === 'uncommon' && greedyCard.isDoubleEdged === true, '狂暴胃口应为罕见双刃卡');
+g.startGame();
+greedyCard.apply();
+assert.strictEqual(greedyCard.canPick(), false, '狂暴胃口不可叠加');
+assert.strictEqual(g.getSnapshot().scoreMultiplier, 1.8, '狂暴胃口应使得分倍率 +0.8');
+assert.strictEqual(g.getSnapshot().extraFoodGrowth, 1, '狂暴胃口代价：吃苹果额外多长 1 节');
+// 验证与「黄金胃口」互不抢占叠加次数
+assert.strictEqual(scoreCard.canPick(), true, '拿到狂暴胃口后黄金胃口仍可正常抽取');
+g.setTestState({
+  snake: [{ x: 5, y: 10 }, { x: 4, y: 10 }, { x: 3, y: 10 }],
+  direction: { x: 1, y: 0 },
+  food: { x: 6, y: 10 },
+  obstacles: [],
+  powerUp: null,
+  score: 0
+});
+g.stepGame(); // 吃苹果：10 * 1.8 = 18 分，蛇身 3->4，pendingGrowth=1
+assert.strictEqual(g.getSnapshot().score, 18, '狂暴胃口下 Lv.1 吃苹果应得 18 分');
+assert.strictEqual(g.getSnapshot().snake.length, 4);
+assert.strictEqual(g.getSnapshot().pendingGrowth, 1);
+g.setTestState({ food: { x: 18, y: 18 } });
+g.stepGame(); // 下一步消耗额外成长：蛇身 4->5
+assert.strictEqual(g.getSnapshot().snake.length, 5, '狂暴胃口代价应使每颗苹果总计成长 2 节');
+
+const berserkCard = g.UPGRADE_POOL.find((u) => u.id === 'berserk_rush');
+assert(berserkCard && berserkCard.rarity === 'rare' && berserkCard.isDoubleEdged === true, '极速猎手应为稀有双刃卡');
+g.startGame();
+const speedBeforeBerserk = g.getSnapshot().baseStepInterval;
+berserkCard.apply();
+assert.strictEqual(berserkCard.canPick(), false, '极速猎手不可叠加');
+assert(g.getSnapshot().baseStepInterval < speedBeforeBerserk, '极速猎手代价应永久加快移动速度');
+assert.strictEqual(g.getSnapshot().baseStepInterval, Math.round(140 / 1.15), 'Lv.1 极速猎手速度倍率应为 1.15x');
+// 极速猎手：护盾撞碎岩石双倍分 + 连击加分翻倍
+g.setTestState({
+  snake: [{ x: 8, y: 10 }, { x: 7, y: 10 }, { x: 6, y: 10 }],
+  direction: { x: 1, y: 0 },
+  obstacles: [{ x: 9, y: 10, warnTimer: 0 }],
+  food: { x: 18, y: 18 },
+  powerUp: null,
+  shieldTimer: 5,
+  score: 0,
+  comboUpgradeLevel: 1,
+  comboCount: 1,
+  comboTimer: 4
+});
+g.stepGame(); // 护盾撞碎岩石：基础 5*2=10 + 连击x2 (4*2=8) = 18 分
+assert.strictEqual(g.getSnapshot().score, 18, '极速猎手下护盾碎石与连击加分应均翻倍（10+8=18）');
+
+// 12c. 困难模式切换、属性生效与通关持久化
+g.setDifficulty('hard');
+g.startGame();
+snap = g.getSnapshot();
+assert.strictEqual(snap.difficulty, 'hard');
+assert.strictEqual(snap.lives, 2, '困难模式初始生命应为 2');
+assert.strictEqual(snap.maxLives, 2, '困难模式初始生命上限应为 2');
+assert.strictEqual(env.getEl('mode-badge').classList.contains('hidden'), false, '困难模式应显示顶部困难徽章');
+assert.strictEqual(snap.baseStepInterval, Math.round(140 / 1.08), '困难模式 Lv.1 基础速度应为 1.08x');
+assert.strictEqual(g.getEffectiveRockDripInterval(3), 9.6, '困难模式 Lv.3 定时落石间隔应加快 20% 至 9.6s');
+
+// 困难模式落石预警缩短为 1.5s，且 Lv.10 提前激活词缀、Lv.15 轮换
+g.setTestState({ score: g.getScoreForLevel(10) });
+g.checkLevelUp();
+snap = g.getSnapshot();
+assert(snap.activeMutator && g.ENDLESS_MUTATORS[snap.activeMutator], '困难模式应在主线 Lv.10 提前开启词缀');
+const hardWarnRock = snap.obstacles.find((o) => o.warnTimer > 0);
+assert.strictEqual(hardWarnRock.warnTimer, 1.5, '困难模式落石预警应缩短为 1.5s');
+const hardFirstMut = snap.activeMutator;
+g.setTestState({ score: g.getScoreForLevel(15) });
+g.checkLevelUp();
+assert.notStrictEqual(g.getSnapshot().activeMutator, hardFirstMut, '困难模式 Lv.15 应轮换为不同词缀');
+
+// 困难模式通关 Lv.20：持久化困难通关次数，徽章显示 🏅，分享文本带 [困难模式]
 g.setTestState({ score: g.getScoreForLevel(20) });
 g.checkLevelUp();
+assert.strictEqual(g.getSnapshot().state, 'won');
+assert.strictEqual(g.getSnapshot().hardClearCount, 1, '困难模式通关应累加困难通关次数');
+assert.strictEqual(g.loadHardClearCount(), 1, '困难模式通关次数应持久化至 localStorage');
+assert(env.getEl('mode-hard-btn').textContent.includes('🏅'), '困难通关后模式按钮应点亮 🏅 徽章');
 
+// 切回标准模式并验证通关战绩分享文本
 (async () => {
   await g.copyShareStats();
+  assert(env.getClipboardText().includes('[困难模式]'), '困难模式复制战绩应带 [困难模式] 标识');
   assert(env.getClipboardText().includes('恭喜通关'), '复制战绩文本应包含通关信息');
   assert(env.getClipboardText().includes('蛇长：'), '复制战绩文本应包含蛇长统计');
   assert(env.getClipboardText().includes('受击：'), '复制战绩文本应包含受击统计');
+
+  g.setDifficulty('standard');
+  g.startGame();
+  assert.strictEqual(g.getSnapshot().lives, 3, '切回标准模式后应恢复 3 点生命');
+  assert.strictEqual(env.getEl('mode-badge').classList.contains('hidden'), true, '切回标准模式后应隐藏困难徽章');
+
   g.gameLoop(1500);
   assert.strictEqual(env.getSaveDepth(), 0, 'Canvas save/restore 深度必须归零');
-  console.log('✓ 全部仓库模块自动化回归测试通过！（连击5层 + 苹果阶梯分 + 每3关强化 + 满额移石 + 无尽词缀与最高纪录 + 4s时停/逐层延时 + P3信息提示与死因统计）');
+  console.log('✓ 全部仓库模块自动化回归测试通过！（60/90/130/160阶梯门槛 + 主线高关词缀 + 双刃强化卡 + 标准/困难模式切换）');
 })();

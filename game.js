@@ -7,6 +7,11 @@ const livesEl = document.getElementById('lives-value');
 const scoreEl = document.getElementById('score-value');
 const levelEl = document.getElementById('level-value');
 const bestScoreEl = document.getElementById('best-score-value');
+const modeBadgeEl = document.getElementById('mode-badge');
+const modeSelectorEl = document.getElementById('mode-selector');
+const modeStandardBtn = document.getElementById('mode-standard-btn');
+const modeHardBtn = document.getElementById('mode-hard-btn');
+const modeDescEl = document.getElementById('mode-desc');
 const nextLevelHintEl = document.getElementById('next-level-hint');
 const nextUpgradeHintEl = document.getElementById('next-upgrade-hint');
 const snakeLenEl = document.getElementById('snake-len-value');
@@ -52,7 +57,7 @@ let bannerTimer = 0;
 let shakeTimer = 0;
 let hitstopTimer = 0;
 let rockDripTimer = 0; // 定时落石累计计时（秒）
-let foodMoveTimer = 0; // 无尽词缀「游走果实」移动计时（秒）
+let foodMoveTimer = 0; // 词缀「游走果实」移动计时（秒）
 
 let comboCount = 0;
 let comboTimer = 0;
@@ -60,17 +65,20 @@ let comboTimer = 0;
 let particles = [];
 let floatingTexts = [];
 
+let difficulty = 'standard'; // 'standard' | 'hard'
+let hardClearCount = loadHardClearCount();
 let maxLives = INITIAL_LIVES;
 let lives = INITIAL_LIVES;
 let score = 0;
 let level = 1;
 let endlessMode = false;
-let activeMutator = null; // 无尽模式当前激活场地词缀 key
+let activeMutator = null; // 当前激活场地词缀 key（主线高关卡与无尽共用）
 let bestScore = loadBestScore();
 let bestEndlessLevel = loadBestEndlessLevel();
 
 // 肉鸽永久强化属性与单局统计（每局重置）
 let slowUpgradeCount = 0;
+let scoreBoostCount = 0;
 let scoreMultiplier = 1.0;
 let buffBonusSec = 0;
 let magnetLevel = 0;
@@ -82,6 +90,9 @@ let nirvanaUsed = false;
 let blastExpertLevel = 0;     // 「爆破专家」是否已获得（0/1，不可叠加）
 let hasStoneFeast = false;    // 是否持有「以石养身」
 let stoneFeastProgress = 0;   // 「以石养身」当前累计碎石进度
+let hasGreedyMaw = false;     // 双刃卡「狂暴胃口」
+let extraFoodGrowth = 0;      // 每次吃普通苹果额外增加的蛇身节数
+let hasBerserkRush = false;   // 双刃卡「极速猎手」
 
 let pendingUpgradeLevels = []; // Array<number | 'chest'>
 let currentChoices = [];
@@ -99,8 +110,43 @@ let stepAccumulator = 0;
 
 bestScoreEl.textContent = String(bestScore);
 
+function getDifficultyCfg() {
+  return DIFFICULTY_CONFIG[difficulty] || DIFFICULTY_CONFIG.standard;
+}
+
+function syncDifficultyUI() {
+  const cfg = getDifficultyCfg();
+  const isHard = difficulty === 'hard';
+  if (modeStandardBtn) modeStandardBtn.classList.toggle('active', !isHard);
+  if (modeHardBtn) {
+    modeHardBtn.classList.toggle('active', isHard);
+    modeHardBtn.textContent = hardClearCount > 0 ? `困难模式 🏅` : '困难模式';
+  }
+  if (modeDescEl) {
+    modeDescEl.textContent = cfg.summary;
+    modeDescEl.classList.toggle('hard', isHard);
+  }
+  if (modeBadgeEl) {
+    modeBadgeEl.classList.toggle('hidden', !isHard);
+  }
+}
+
+function setDifficulty(mode) {
+  if (!DIFFICULTY_CONFIG[mode]) return;
+  difficulty = mode;
+  syncDifficultyUI();
+  if (state === 'idle') {
+    const cfg = getDifficultyCfg();
+    maxLives = cfg.initialLives;
+    lives = cfg.initialLives;
+    recalcBaseInterval();
+    updateHUD();
+    renderRockDripChip();
+  }
+}
+
 // ------------------------------------------
-// 三选一强化词条池（共 14 项：普通 > 罕见 > 稀有 > 传说）
+// 三选一强化词条池（共 16 项：普通 > 罕见 > 稀有 > 传说，含 2 张高风险双刃卡）
 // ------------------------------------------
 const UPGRADE_POOL = [
   {
@@ -108,9 +154,10 @@ const UPGRADE_POOL = [
     name: '强健体魄',
     rarity: 'uncommon',
     getDesc: () => `最大生命值 +1（当前上限 ${maxLives}→${maxLives + 1}），并立即恢复 1 点生命`,
-    canPick: () => maxLives < HARD_MAX_LIVES,
+    canPick: () => maxLives < getDifficultyCfg().hardMaxLives,
     apply: () => {
-      maxLives = Math.min(HARD_MAX_LIVES, maxLives + 1);
+      const cap = getDifficultyCfg().hardMaxLives;
+      maxLives = Math.min(cap, maxLives + 1);
       lives = Math.min(maxLives, lives + 1);
       addFloatingText(snake[0].x, snake[0].y, '生命上限 +1!', 'hsl(345, 95%, 72%)');
     }
@@ -151,8 +198,9 @@ const UPGRADE_POOL = [
     name: '黄金胃口',
     rarity: 'common',
     getDesc: () => `苹果与金果得分永久 +50%（倍率 ${scoreMultiplier.toFixed(1)}x→${(scoreMultiplier + 0.5).toFixed(1)}x，减少长身体次数）`,
-    canPick: () => scoreMultiplier < 2.5,
+    canPick: () => scoreBoostCount < 3,
     apply: () => {
+      scoreBoostCount += 1;
       scoreMultiplier = +(scoreMultiplier + 0.5).toFixed(1);
       addFloatingText(snake[0].x, snake[0].y, `得分 ${scoreMultiplier.toFixed(1)}x!`, 'hsl(43, 96%, 64%)');
     }
@@ -233,6 +281,31 @@ const UPGRADE_POOL = [
     }
   },
   {
+    id: 'blast_expert',
+    name: '爆破专家',
+    rarity: 'uncommon',
+    getDesc: () => '炸弹刷新权重 +50%，炸弹每炸碎 1 块岩石额外 +5 分',
+    canPick: () => blastExpertLevel < 1,
+    apply: () => {
+      blastExpertLevel = 1;
+      addFloatingText(snake[0].x, snake[0].y, '爆破专家!', 'hsl(24, 98%, 68%)');
+    }
+  },
+  {
+    id: 'greedy_maw',
+    name: '狂暴胃口',
+    rarity: 'uncommon',
+    isDoubleEdged: true,
+    getDesc: () => `苹果与金果得分永久 +80%（${scoreMultiplier.toFixed(1)}x→${(scoreMultiplier + 0.8).toFixed(1)}x）；代价：吃苹果额外多长 1 节蛇身`,
+    canPick: () => !hasGreedyMaw,
+    apply: () => {
+      hasGreedyMaw = true;
+      extraFoodGrowth += 1;
+      scoreMultiplier = +(scoreMultiplier + 0.8).toFixed(1);
+      addFloatingText(snake[0].x, snake[0].y, `狂暴胃口 ${scoreMultiplier.toFixed(1)}x!`, 'hsl(32, 98%, 66%)');
+    }
+  },
+  {
     id: 'magnet_aura',
     name: '幸运磁力',
     rarity: 'rare',
@@ -259,17 +332,6 @@ const UPGRADE_POOL = [
     }
   },
   {
-    id: 'blast_expert',
-    name: '爆破专家',
-    rarity: 'uncommon',
-    getDesc: () => '炸弹刷新权重 +50%，炸弹每炸碎 1 块岩石额外 +5 分',
-    canPick: () => blastExpertLevel < 1,
-    apply: () => {
-      blastExpertLevel = 1;
-      addFloatingText(snake[0].x, snake[0].y, '爆破专家!', 'hsl(24, 98%, 68%)');
-    }
-  },
-  {
     id: 'stone_feast',
     name: '以石养身',
     rarity: 'rare',
@@ -279,6 +341,19 @@ const UPGRADE_POOL = [
       hasStoneFeast = true;
       stoneFeastProgress = 0;
       addFloatingText(snake[0].x, snake[0].y, '以石养身!', 'hsl(152, 80%, 66%)');
+    }
+  },
+  {
+    id: 'berserk_rush',
+    name: '极速猎手',
+    rarity: 'rare',
+    isDoubleEdged: true,
+    getDesc: () => '所有碎石得分与连击加分永久翻倍（×2）；代价：移动速度永久加快 15%',
+    canPick: () => !hasBerserkRush,
+    apply: () => {
+      hasBerserkRush = true;
+      recalcBaseInterval();
+      addFloatingText(snake[0].x, snake[0].y, '极速猎手 碎石/连击×2!', 'hsl(356, 95%, 70%)');
     }
   },
   {
@@ -298,10 +373,12 @@ const UPGRADE_POOL = [
 // 辅助查询与隐藏速度计算
 // ------------------------------------------
 function recalcBaseInterval() {
+  const cfg = getDifficultyCfg();
   const levelGain =
-    Math.min(level - 1, 19) * SPEED_GAIN_PER_LEVEL +
-    Math.max(0, level - CLEAR_LEVEL) * 0.025;
-  const rawMult = Math.min(2.5, 1 + levelGain - slowUpgradeCount * SLOW_UPGRADE_STEP);
+    Math.min(level - 1, 19) * (SPEED_GAIN_PER_LEVEL * cfg.speedGainMult) +
+    Math.max(0, level - CLEAR_LEVEL) * (0.025 * cfg.speedGainMult);
+  const berserkGain = hasBerserkRush ? BERSERK_SPEED_BONUS : 0;
+  const rawMult = Math.min(2.8, cfg.initialSpeedMult + levelGain + berserkGain - slowUpgradeCount * SLOW_UPGRADE_STEP);
   const clampedMult = Math.max(MIN_SPEED_MULT, rawMult);
   baseStepInterval = Math.round(INITIAL_INTERVAL / clampedMult);
 }
@@ -382,13 +459,17 @@ function registerRocksSmashed(count) {
 }
 
 function getRockSmashBasePts() {
-  return endlessMode && activeMutator === 'fragile_aegis' ? 10 : 5;
+  const mutMult = activeMutator === 'fragile_aegis' ? 2 : 1;
+  const berserkMult = hasBerserkRush ? 2 : 1;
+  return 5 * mutMult * berserkMult;
 }
 
 function getEffectiveRockDripInterval(lv = level) {
   const base = getRockDripInterval(lv);
   if (base <= 0) return 0;
-  return endlessMode && activeMutator === 'double_meteor' ? +(base * 0.7).toFixed(2) : base;
+  const diffMult = getDifficultyCfg().rockDripMult;
+  const mutMult = activeMutator === 'double_meteor' ? 0.7 : 1.0;
+  return +(base * diffMult * mutMult).toFixed(2);
 }
 
 function rollEndlessMutator(forcedKey = null) {
@@ -407,7 +488,7 @@ function rollEndlessMutator(forcedKey = null) {
 // 道具实际刷新权重：炸弹随场上岩石数量动态提升，并叠加词缀与「爆破专家」加成
 function getPowerUpWeight(type) {
   if (type === 'bomb') {
-    const mutatorBonus = endlessMode && activeMutator === 'double_meteor' ? 6 : 0;
+    const mutatorBonus = activeMutator === 'double_meteor' ? 6 : 0;
     return (getBombDynamicWeight(obstacles.length) + mutatorBonus) * (1 + 0.5 * blastExpertLevel);
   }
   return POWERUP_TYPES[type].weight;
@@ -479,6 +560,7 @@ function findSafeObstacleCandidates(maxNearbyRocks = 1) {
 
 function spawnLevelObstacles(count, lv = level) {
   const cap = getMaxObstacles(lv);
+  const warnDur = getDifficultyCfg().warnDuration;
   let spawned = 0;
 
   for (let n = 0; n < count; n++) {
@@ -486,7 +568,7 @@ function spawnLevelObstacles(count, lv = level) {
     const candidates = findSafeObstacleCandidates(1);
     if (candidates.length > 0) {
       const pick = candidates[Math.floor(Math.random() * candidates.length)];
-      obstacles.push({ x: pick.x, y: pick.y, warnTimer: 2.2 });
+      obstacles.push({ x: pick.x, y: pick.y, warnTimer: warnDur });
       spawned++;
     }
   }
@@ -497,6 +579,7 @@ function spawnLevelObstacles(count, lv = level) {
 // 定时落石与满额移石：未满上限时新增落石；到达上限后移除最早出现的岩石并在新位置落石预警
 function triggerTimedRockDrop(dropCount = 1, lv = level) {
   const cap = getMaxObstacles(lv);
+  const warnDur = getDifficultyCfg().warnDuration;
   let acted = 0;
 
   for (let n = 0; n < dropCount; n++) {
@@ -513,7 +596,7 @@ function triggerTimedRockDrop(dropCount = 1, lv = level) {
         const oldRock = obstacles.splice(removeIdx, 1)[0];
         spawnBurst(oldRock.x, oldRock.y, '35, 18%, 50%', 4);
         const pick = candidates[Math.floor(Math.random() * candidates.length)];
-        obstacles.push({ x: pick.x, y: pick.y, warnTimer: 2.2 });
+        obstacles.push({ x: pick.x, y: pick.y, warnTimer: warnDur });
         acted++;
       }
     }
@@ -545,6 +628,8 @@ function checkLevelUp() {
 
     let spawnedRocks = 0;
     let rotatedMutator = null;
+    const hadMutatorBefore = Boolean(activeMutator);
+    const mutStartLv = getDifficultyCfg().mutatorStartLevel;
     const newlyUnlocked = [];
     const hasAvailableUpgrade = UPGRADE_POOL.some((u) => u.canPick());
 
@@ -553,7 +638,7 @@ function checkLevelUp() {
       if (lv % UPGRADE_EVERY_LEVELS === 0 && hasAvailableUpgrade) {
         pendingUpgradeLevels.push(lv);
       }
-      if (endlessMode && lv % ENDLESS_MUTATOR_EVERY_LEVELS === 0) {
+      if (lv >= mutStartLv && lv % ENDLESS_MUTATOR_EVERY_LEVELS === 0) {
         rotatedMutator = rollEndlessMutator();
       }
       for (const cfg of Object.values(POWERUP_TYPES)) {
@@ -574,12 +659,13 @@ function checkLevelUp() {
       addFloatingText(snake[0].x, snake[0].y, `解锁道具：${newlyUnlocked.join('/')}!`, 'hsl(43, 98%, 72%)');
     }
     if (rotatedMutator && snake.length > 0) {
-      addFloatingText(snake[0].x, snake[0].y, `场地变化：${rotatedMutator.name}!`, 'hsl(38, 98%, 72%)');
+      addFloatingText(snake[0].x, snake[0].y, `场地词缀：${rotatedMutator.name}!`, 'hsl(38, 98%, 72%)');
     }
 
     playTone(pendingUpgradeLevels.length > 0 ? 'upgrade' : 'levelup');
     if (rotatedMutator) {
-      showLevelBanner(`Lv.${level} 词缀轮换【${rotatedMutator.name}】：${rotatedMutator.desc}`);
+      const labelPrefix = hadMutatorBefore ? `Lv.${level} 词缀轮换` : `Lv.${level} 精英阶段·词缀激活`;
+      showLevelBanner(`${labelPrefix}【${rotatedMutator.name}】：${rotatedMutator.desc}`);
     } else if (spawnedRocks > 0) {
       showLevelBanner(`Lv.${level} 关卡提升！注意红色落石预警`);
     } else {
@@ -632,6 +718,7 @@ function openNextUpgradeChoice() {
 
   currentChoices.forEach((choice, idx) => {
     const rarityMeta = RARITY_CONFIG[choice.rarity];
+    const riskBadge = choice.isDoubleEdged ? '<span class="risk-tag">双刃</span>' : '';
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = `upgrade-card rarity-${choice.rarity}`;
@@ -641,6 +728,7 @@ function openNextUpgradeChoice() {
         <span class="upgrade-title-row">
           <span class="upgrade-name">${choice.name}</span>
           <span class="rarity-tag rarity-${choice.rarity}">${rarityMeta.label}</span>
+          ${riskBadge}
         </span>
         <span class="upgrade-desc">${choice.getDesc()}</span>
       </span>
@@ -690,6 +778,7 @@ function showLevelBanner(text) {
 // 初始化、暂停、战绩结算与分享
 // ------------------------------------------
 function initGameData() {
+  const cfg = getDifficultyCfg();
   snake = [
     { x: 6, y: 10 },
     { x: 5, y: 10 },
@@ -699,14 +788,15 @@ function initGameData() {
   direction = { x: 1, y: 0 };
   directionQueue = [];
 
-  maxLives = INITIAL_LIVES;
-  lives = INITIAL_LIVES;
+  maxLives = cfg.initialLives;
+  lives = cfg.initialLives;
   score = 0;
   level = 1;
   endlessMode = false;
   activeMutator = null;
 
   slowUpgradeCount = 0;
+  scoreBoostCount = 0;
   scoreMultiplier = 1.0;
   buffBonusSec = 0;
   magnetLevel = 0;
@@ -718,6 +808,9 @@ function initGameData() {
   blastExpertLevel = 0;
   hasStoneFeast = false;
   stoneFeastProgress = 0;
+  hasGreedyMaw = false;
+  extraFoodGrowth = 0;
+  hasBerserkRush = false;
 
   pendingUpgradeLevels = [];
   currentChoices = [];
@@ -754,6 +847,7 @@ function initGameData() {
   floatingTexts = [];
 
   spawnFood();
+  syncDifficultyUI();
   updateHUD();
   renderLegend();
   renderBuffBar();
@@ -767,6 +861,7 @@ function startGame() {
   lastFrameTime = performance.now();
   pauseBtn.disabled = false;
   pauseBtn.textContent = '暂停';
+  if (modeSelectorEl) modeSelectorEl.classList.add('hidden');
   overlayTipsEl.classList.add('hidden');
   runSummaryEl.classList.add('hidden');
   endlessBtn.classList.add('hidden');
@@ -795,6 +890,7 @@ function continueEndlessMode() {
   }
   pauseBtn.disabled = false;
   pauseBtn.textContent = '暂停';
+  if (modeSelectorEl) modeSelectorEl.classList.add('hidden');
   endlessBtn.classList.add('hidden');
   shareBtn.classList.add('hidden');
   runSummaryEl.classList.add('hidden');
@@ -815,7 +911,7 @@ function pauseGame(
   state = 'paused';
   pauseBtn.disabled = false;
   pauseBtn.textContent = '继续';
-  showOverlay(title, desc, '继续游戏', { showTips: false, showSummary: false });
+  showOverlay(title, desc, '继续游戏', { showTips: false, showSummary: false, showMode: false });
 }
 
 function togglePause() {
@@ -843,6 +939,9 @@ function renderRunSummary() {
         .join('')
     : '<span class="summary-upgrades-empty">本局尚未解锁强化</span>';
 
+  const modeTag = difficulty === 'hard'
+    ? '<span class="summary-fatal">🔥 困难模式</span> ｜ '
+    : '';
   const totalHits = damageStats.wall + damageStats.rock + damageStats.self;
   const fatalPrefix = state === 'gameover' && lastHitCause
     ? `<span class="summary-fatal">死因：${CAUSE_LABELS[lastHitCause]}</span> ｜ `
@@ -871,17 +970,18 @@ function renderRunSummary() {
         <span class="summary-metric-val">${endlessRecordText}</span>
       </div>
     </div>
-    <div class="summary-causes">${fatalPrefix}${hitBreakdown}</div>
+    <div class="summary-causes">${modeTag}${fatalPrefix}${hitBreakdown}</div>
     <div class="summary-upgrades">${upgradesHtml}</div>
   `;
 }
 
 function buildShareText() {
-  let statusLine = `🐍 贪吃蛇·肉鸽挑战｜闯关至 Lv.${level}`;
+  const modePrefix = difficulty === 'hard' ? '[困难模式] ' : '';
+  let statusLine = `🐍 贪吃蛇·肉鸽挑战｜${modePrefix}闯关至 Lv.${level}`;
   if (state === 'won') {
-    statusLine = `🐍 贪吃蛇·肉鸽挑战｜恭喜通关！(Lv.${level})`;
+    statusLine = `🐍 贪吃蛇·肉鸽挑战｜${modePrefix}恭喜通关！(Lv.${level})`;
   } else if (endlessMode) {
-    statusLine = `🐍 贪吃蛇·肉鸽挑战｜无尽模式止步 Lv.${level}（最高 Lv.${bestEndlessLevel}）`;
+    statusLine = `🐍 贪吃蛇·肉鸽挑战｜${modePrefix}无尽模式止步 Lv.${level}（最高 Lv.${bestEndlessLevel}）`;
   }
   const upgradeLine = pickedUpgrades.length > 0
     ? pickedUpgrades.map((u) => u.name).join(' / ')
@@ -947,6 +1047,12 @@ function endGame(won = false) {
     spawnBurst(Math.floor(GRID_COUNT / 2), Math.floor(GRID_COUNT / 2), '152, 80%, 58%', 18);
   }
 
+  if (won && !endlessMode && difficulty === 'hard') {
+    hardClearCount += 1;
+    saveHardClearCount(hardClearCount);
+    syncDifficultyUI();
+  }
+
   if (endlessMode && level > bestEndlessLevel) {
     bestEndlessLevel = level;
     saveBestEndlessLevel(bestEndlessLevel);
@@ -961,31 +1067,36 @@ function endGame(won = false) {
   renderRunSummary();
   shareBtn.textContent = '复制战绩';
 
+  const modeLabel = getDifficultyCfg().label;
   if (won) {
+    const title = difficulty === 'hard' ? '🔥 困难模式通关！' : '恭喜通关！';
     const desc = level >= CLEAR_LEVEL
-      ? `成功突破全部 ${CLEAR_LEVEL} 关挑战！本局得分 ${score} · 最高纪录 ${bestScore}，可选择继续无尽模式挑战极限！`
-      : `成功占领全部棋盘格！本局得分 ${score} · 最高纪录 ${bestScore}`;
-    showOverlay('恭喜通关！', desc, '再来一局', {
+      ? `${modeLabel}突破全部 ${CLEAR_LEVEL} 关！本局得分 ${score} · 最高纪录 ${bestScore}，可继续无尽模式挑战极限！`
+      : `${modeLabel}占领全部棋盘格！本局得分 ${score} · 最高纪录 ${bestScore}`;
+    showOverlay(title, desc, '再来一局', {
       showTips: false,
       showSummary: true,
-      showEndless: !endlessMode
+      showEndless: !endlessMode,
+      showMode: true
     });
   } else {
     const desc = endlessMode
-      ? `无尽模式 · 止步 Lv.${level}（无尽最高 Lv.${bestEndlessLevel}）· 得分 ${score}`
-      : `闯至 Lv.${level} · 本局得分 ${score} · 最高纪录 ${bestScore}`;
+      ? `${modeLabel}无尽 · 止步 Lv.${level}（无尽最高 Lv.${bestEndlessLevel}）· 得分 ${score}`
+      : `${modeLabel} · 闯至 Lv.${level} · 本局得分 ${score} · 最高纪录 ${bestScore}`;
     showOverlay('游戏结束', desc, '再来一局', {
       showTips: false,
       showSummary: true,
-      showEndless: false
+      showEndless: false,
+      showMode: true
     });
   }
 }
 
-function showOverlay(title, desc, btnText, { showTips = false, showSummary = false, showEndless = false } = {}) {
+function showOverlay(title, desc, btnText, { showTips = false, showSummary = false, showEndless = false, showMode = false } = {}) {
   overlayTitleEl.textContent = title;
   overlayDescEl.textContent = desc;
   startBtn.textContent = btnText;
+  if (modeSelectorEl) modeSelectorEl.classList.toggle('hidden', !showMode);
   overlayTipsEl.classList.toggle('hidden', !showTips);
   runSummaryEl.classList.toggle('hidden', !showSummary);
   endlessBtn.classList.toggle('hidden', !showEndless);
@@ -1035,7 +1146,7 @@ function updateHUD() {
 
 function renderBuffBar() {
   const pills = [];
-  if (endlessMode && activeMutator && ENDLESS_MUTATORS[activeMutator]) {
+  if (activeMutator && ENDLESS_MUTATORS[activeMutator]) {
     const mut = ENDLESS_MUTATORS[activeMutator];
     pills.push(`<span class="buff-pill" title="${mut.desc}" style="border-color: hsl(38, 95%, 56%); color: hsl(43, 100%, 76%);">词缀·${mut.name}</span>`);
   }
@@ -1073,6 +1184,12 @@ function renderBuffBar() {
   }
   if (hasStoneFeast) {
     pills.push(`<span class="buff-pill" style="border-color: hsl(152, 70%, 46%); color: hsl(152, 85%, 72%);">养身 ${stoneFeastProgress}/${STONE_FEAST_THRESHOLD}</span>`);
+  }
+  if (hasGreedyMaw) {
+    pills.push('<span class="buff-pill" style="border-color: hsl(28, 92%, 54%); color: hsl(34, 98%, 74%);">狂暴胃口 +1长</span>');
+  }
+  if (hasBerserkRush) {
+    pills.push('<span class="buff-pill" style="border-color: hsl(356, 88%, 58%); color: hsl(356, 96%, 76%);">极速猎手 ×2</span>');
   }
   buffBarEl.innerHTML = pills.length > 0
     ? pills.join('')
@@ -1273,7 +1390,8 @@ function registerComboBonus() {
   comboCount = Math.min(MAX_COMBO_COUNT, comboCount + 1);
   comboTimer = COMBO_WINDOW + (comboUpgradeLevel > 1 ? 1.0 : 0);
   renderBuffBar();
-  return comboCount >= 2 ? (comboCount - 1) * (4 * comboUpgradeLevel) : 0;
+  const base = comboCount >= 2 ? (comboCount - 1) * (4 * comboUpgradeLevel) : 0;
+  return hasBerserkRush ? base * 2 : base;
 }
 
 function applyPowerUp(item) {
@@ -1312,7 +1430,7 @@ function applyPowerUp(item) {
     playTone('powerup');
     score += calcDoublePts(10);
     const rawShieldDur = POWERUP_TYPES.shield.duration + buffBonusSec;
-    const shieldDur = endlessMode && activeMutator === 'fragile_aegis'
+    const shieldDur = activeMutator === 'fragile_aegis'
       ? rawShieldDur * 0.5
       : rawShieldDur;
     shieldTimer = Math.max(shieldTimer, shieldDur);
@@ -1322,7 +1440,8 @@ function applyPowerUp(item) {
   } else if (item.type === 'bomb') {
     playTone('bomb');
     const cleared = clearObstaclesNear(snake[0].x, snake[0].y, 5);
-    const pts = calcDoublePts(10 + cleared * (getRockSmashBasePts() + 5 * blastExpertLevel));
+    const expertBonus = 5 * blastExpertLevel * (hasBerserkRush ? 2 : 1);
+    const pts = calcDoublePts(10 + cleared * (getRockSmashBasePts() + expertBonus));
     score += pts;
     shakeTimer = Math.max(shakeTimer, 0.2);
     triggerHaptic([25, 20, 35]);
@@ -1492,9 +1611,12 @@ function stepGame() {
 
   if (willEatFood) {
     const comboBonus = registerComboBonus();
-    const baseFoodPts = getFoodBasePoints(level) + (endlessMode && activeMutator === 'moving_food' ? 6 : 0);
+    const baseFoodPts = getFoodBasePoints(level) + (activeMutator === 'moving_food' ? 6 : 0);
     const pts = calcDoublePts(Math.round(baseFoodPts * scoreMultiplier) + comboBonus);
     score += pts;
+    if (extraFoodGrowth > 0) {
+      pendingGrowth += extraFoodGrowth;
+    }
     playTone('eat');
     spawnBurst(food.x, food.y, '16, 90%, 62%', 10);
     if (comboBonus > 0) {
@@ -1601,7 +1723,7 @@ function updateTimers(dtSeconds) {
   }
 
   if (!isWorldFrozen) {
-    if (endlessMode && activeMutator === 'moving_food' && food) {
+    if (activeMutator === 'moving_food' && food) {
       foodMoveTimer += dtSeconds;
       if (foodMoveTimer >= 3.5) {
         foodMoveTimer = 0;
@@ -1631,7 +1753,7 @@ function updateTimers(dtSeconds) {
       rockDripTimer += dtSeconds;
       if (rockDripTimer >= dripInterval) {
         rockDripTimer = 0;
-        const dropCnt = endlessMode && activeMutator === 'double_meteor' ? 2 : 1;
+        const dropCnt = activeMutator === 'double_meteor' ? 2 : 1;
         triggerTimedRockDrop(dropCnt, level);
       }
     } else {
@@ -1741,6 +1863,8 @@ startBtn.addEventListener('click', () => {
   }
 });
 
+if (modeStandardBtn) modeStandardBtn.addEventListener('click', () => setDifficulty('standard'));
+if (modeHardBtn) modeHardBtn.addEventListener('click', () => setDifficulty('hard'));
 endlessBtn.addEventListener('click', continueEndlessMode);
 shareBtn.addEventListener('click', copyShareStats);
 pauseBtn.addEventListener('click', togglePause);
