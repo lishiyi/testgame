@@ -834,6 +834,12 @@ function rerollUpgradeChoices() {
   return true;
 }
 
+function syncPlayingTouchLock() {
+  if (typeof document !== 'undefined' && document.body && document.body.classList) {
+    document.body.classList.toggle('is-playing', state === 'running');
+  }
+}
+
 function openNextUpgradeChoice() {
   if (pendingUpgradeLevels.length === 0 || state !== 'running') return;
 
@@ -842,6 +848,7 @@ function openNextUpgradeChoice() {
   if (currentChoices.length === 0) return;
 
   state = 'choosing';
+  syncPlayingTouchLock();
   pauseBtn.disabled = true;
 
   upgradeBadgeEl.textContent = source === 'chest'
@@ -890,6 +897,7 @@ function showLevelBanner(text) {
 // 初始化、暂停、战绩结算与分享
 // ------------------------------------------
 function initGameData() {
+  syncPlayingTouchLock();
   const cfg = getDifficultyCfg();
   snake = [
     { x: 6, y: 10 },
@@ -977,6 +985,7 @@ function initGameData() {
 function startGame() {
   initGameData();
   state = 'running';
+  syncPlayingTouchLock();
   stepAccumulator = 0;
   lastFrameTime = performance.now();
   pauseBtn.disabled = false;
@@ -999,6 +1008,7 @@ function continueEndlessMode() {
   }
   const mut = rollEndlessMutator();
   state = 'running';
+  syncPlayingTouchLock();
   directionQueue = [];
   stepAccumulator = 0;
   lastFrameTime = performance.now();
@@ -1064,6 +1074,7 @@ function pauseGame(
   desc = '按空格键或点击下方按钮继续挑战。'
 ) {
   state = 'paused';
+  syncPlayingTouchLock();
   pauseBtn.disabled = false;
   pauseBtn.textContent = '继续';
   renderPauseUpgrades();
@@ -1080,6 +1091,7 @@ function togglePause() {
     pauseGame('已暂停', '按空格键或点击下方按钮继续挑战。');
   } else if (state === 'paused') {
     state = 'running';
+    syncPlayingTouchLock();
     stepAccumulator = 0;
     lastFrameTime = performance.now();
     pauseBtn.textContent = '暂停';
@@ -1198,6 +1210,7 @@ async function copyShareStats() {
 
 function endGame(won = false) {
   state = won ? 'won' : 'gameover';
+  syncPlayingTouchLock();
   pauseBtn.disabled = true;
   pauseBtn.textContent = '暂停';
   upgradeOverlayEl.classList.add('hidden');
@@ -2116,35 +2129,75 @@ bindDpadButton('dpad-down', { x: 0, y: 1 });
 bindDpadButton('dpad-left', { x: -1, y: 0 });
 bindDpadButton('dpad-right', { x: 1, y: 0 });
 
+const SWIPE_THRESHOLD = 18;
 let touchStart = null;
-canvas.addEventListener('touchstart', (e) => {
-  if (e.touches.length !== 1) return;
+let touchSwiped = false;
+
+function isTouchControlTarget(target) {
+  return Boolean(
+    target &&
+    typeof target.closest === 'function' &&
+    target.closest('button, a, input, select, textarea')
+  );
+}
+
+document.addEventListener('touchstart', (e) => {
+  if (state !== 'running' || e.touches.length !== 1 || isTouchControlTarget(e.target)) {
+    touchStart = null;
+    touchSwiped = false;
+    return;
+  }
   touchStart = {
     x: e.touches[0].clientX,
     y: e.touches[0].clientY
   };
+  touchSwiped = false;
 }, { passive: true });
 
-canvas.addEventListener('touchmove', (e) => {
-  if (state === 'running') {
+document.addEventListener('touchmove', (e) => {
+  if (state !== 'running') return;
+  if (!isTouchControlTarget(e.target)) {
     e.preventDefault();
   }
-}, { passive: false });
+  if (!touchStart || e.touches.length !== 1) return;
 
-canvas.addEventListener('touchend', (e) => {
-  if (!touchStart || e.changedTouches.length === 0) return;
-  const dx = e.changedTouches[0].clientX - touchStart.x;
-  const dy = e.changedTouches[0].clientY - touchStart.y;
-  touchStart = null;
+  const curX = e.touches[0].clientX;
+  const curY = e.touches[0].clientY;
+  const dx = curX - touchStart.x;
+  const dy = curY - touchStart.y;
 
-  if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < SWIPE_THRESHOLD) return;
 
   if (Math.abs(dx) > Math.abs(dy)) {
     queueDirection(dx > 0 ? { x: 1, y: 0 } : { x: -1, y: 0 });
   } else {
     queueDirection(dy > 0 ? { x: 0, y: 1 } : { x: 0, y: -1 });
   }
-});
+  // 重置滑动锚点，支持不抬手连续拐弯且划出场地外依然稳定响应
+  touchStart = { x: curX, y: curY };
+  touchSwiped = true;
+}, { passive: false });
+
+document.addEventListener('touchend', (e) => {
+  if (state === 'running' && touchStart && !touchSwiped && e.changedTouches.length > 0) {
+    const dx = e.changedTouches[0].clientX - touchStart.x;
+    const dy = e.changedTouches[0].clientY - touchStart.y;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) >= SWIPE_THRESHOLD) {
+      if (Math.abs(dx) > Math.abs(dy)) {
+        queueDirection(dx > 0 ? { x: 1, y: 0 } : { x: -1, y: 0 });
+      } else {
+        queueDirection(dy > 0 ? { x: 0, y: 1 } : { x: 0, y: -1 });
+      }
+    }
+  }
+  touchStart = null;
+  touchSwiped = false;
+}, { passive: true });
+
+document.addEventListener('touchcancel', () => {
+  touchStart = null;
+  touchSwiped = false;
+}, { passive: true });
 
 initGameData();
 requestAnimationFrame(gameLoop);

@@ -81,7 +81,7 @@ function createBrowserSandbox() {
   const document = {
     hidden: false,
     documentElement: { classList: makeClassList(['dark']) },
-    body: { appendChild() {}, removeChild() {} },
+    body: { classList: makeClassList([]), appendChild() {}, removeChild() {} },
     getElementById: (id) => getEl(id),
     querySelectorAll: () => [],
     execCommand: () => true,
@@ -138,6 +138,10 @@ function createBrowserSandbox() {
   return {
     sandbox,
     getEl,
+    getBodyClassList: () => document.body.classList,
+    dispatchDocEvent(ev, payload) {
+      (docListeners[ev] || []).forEach((fn) => fn(payload));
+    },
     getSaveDepth: () => saveDepth,
     getClipboardText: () => clipboardText,
     getVibrated: () => vibrated,
@@ -232,7 +236,7 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     renderScene,
     getSnapshot: () => JSON.parse(JSON.stringify({
       state, difficulty, hardClearCount, level, endlessMode, activeMutator, bestScore, bestEndlessLevel, score, lives, maxLives, scoreMultiplier, buffBonusSec, slowUpgradeCount, baseStepInterval,
-      snake, pendingGrowth, obstacles, food, powerUp, lastPowerUpType, invulnTimer, doubleTimer, shieldTimer, ghostTimer, freezeTimer,
+      snake, pendingGrowth, direction, directionQueue, obstacles, food, powerUp, lastPowerUpType, invulnTimer, doubleTimer, shieldTimer, ghostTimer, freezeTimer,
       comboCount, comboTimer, hasPhaseBody, phaseBodyCooldown, hasLevelFreeze,
       nirvanaCharges, nirvanaUsed, hasStarfallResonance, rerollsLeft,
       currentChoiceIds: currentChoices.map((c) => c.id),
@@ -1421,7 +1425,55 @@ assert(env.getEl('mode-hard-btn').textContent.includes('🏅'), '困难通关后
   assert.strictEqual(snap.score, 16, '狂飙时刻吃苹果基础分应 +6（10+6=16）');
   assert.strictEqual(snap.comboTimer, 7.0, '狂飙时刻连击窗口应延长 +2s 至 7.0s');
 
+  // 14. 校验状态栏固定高度防抖动 CSS 与移动端全局防滚滑动手势
+  const indexCss = fs.readFileSync(path.join(ROOT, 'index.css'), 'utf8');
+  assert(/\.status-strip\s*\{[\s\S]*?height:\s*\d+px;[\s\S]*?overflow:\s*hidden;/.test(indexCss), '.status-strip 应采用固定高度 + overflow: hidden 防止换行顶开棋盘');
+  assert(/body\.is-playing[\s\S]*?touch-action:\s*none;/.test(indexCss), 'body.is-playing 应锁定 touch-action: none 防止滑动时网页滚动');
+  assert(/\.board-stage\s*\{[\s\S]*?touch-action:\s*none;/.test(indexCss), '.board-stage 应设置 touch-action: none');
+
+  g.startGame();
+  assert.strictEqual(env.getBodyClassList().contains('is-playing'), true, '游戏运行中 body 应带 is-playing 锁定类');
+  g.pauseGame();
+  assert.strictEqual(env.getBodyClassList().contains('is-playing'), false, '暂停时应解除 is-playing 锁定类');
+  g.togglePause();
+  assert.strictEqual(env.getBodyClassList().contains('is-playing'), true, '继续游戏后应重新挂上 is-playing');
+
+  // 模拟在棋盘外的空白区域发起连续“先下后左”L形滑动，不抬手即可转向且全程 preventDefault
+  const bodyTarget = { closest: () => null };
+  let preventedCount = 0;
+  env.dispatchDocEvent('touchstart', { touches: [{ clientX: 20, clientY: 100 }], target: bodyTarget });
+  env.dispatchDocEvent('touchmove', {
+    touches: [{ clientX: 22, clientY: 130 }],
+    target: bodyTarget,
+    preventDefault: () => { preventedCount++; }
+  });
+  assert.strictEqual(preventedCount, 1, '运行中在场地外滑动必须调用 preventDefault 阻止网页滚动');
+  assert.deepStrictEqual(g.getSnapshot().directionQueue, [{ x: 0, y: 1 }], '滑动超过阈值应在 touchmove 阶段立刻触发向下转向');
+
+  // 不抬手继续左滑 -> 连续第二段转向进入队列
+  env.dispatchDocEvent('touchmove', {
+    touches: [{ clientX: -10, clientY: 132 }],
+    target: bodyTarget,
+    preventDefault: () => { preventedCount++; }
+  });
+  assert.strictEqual(preventedCount, 2);
+  assert.deepStrictEqual(g.getSnapshot().directionQueue, [{ x: 0, y: 1 }, { x: -1, y: 0 }], '不抬手连续滑动应支持连拐进入方向队列');
+  env.dispatchDocEvent('touchend', { changedTouches: [{ clientX: -10, clientY: 132 }], target: bodyTarget });
+
+  // 按在按钮上的触摸不应被手势逻辑劫持
+  const buttonTarget = { closest: (sel) => (sel.includes('button') ? {} : null) };
+  let btnPrevented = false;
+  g.setTestState({ direction: { x: 1, y: 0 } });
+  env.dispatchDocEvent('touchstart', { touches: [{ clientX: 100, clientY: 100 }], target: buttonTarget });
+  env.dispatchDocEvent('touchmove', {
+    touches: [{ clientX: 100, clientY: 150 }],
+    target: buttonTarget,
+    preventDefault: () => { btnPrevented = true; }
+  });
+  assert.strictEqual(btnPrevented, false, '按钮上的触摸不应被全局防滚逻辑拦截');
+  assert.deepStrictEqual(g.getSnapshot().directionQueue, [], '按钮上的滑动不应误触发蛇转向');
+
   g.gameLoop(1500);
   assert.strictEqual(env.getSaveDepth(), 0, 'Canvas save/restore 深度必须归零');
-  console.log('✓ 全部仓库模块自动化回归测试通过！（简单/标准/困难分难度纪录 + 重随 + 星陨共鸣双传说 + 5 词缀 + 暂停看强化）');
+  console.log('✓ 全部仓库模块自动化回归测试通过！（状态栏固定高度防抖动 + 移动端全局防滚手势 + 全部玩法回归）');
 })();
