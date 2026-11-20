@@ -188,13 +188,18 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
   .map((rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8'))
   .join('\n') + `
   globalThis.__game = {
+    MIN_STEP_INTERVAL,
     SPEED_GAIN_PER_LEVEL,
     SLOW_UPGRADE_STEP,
+    SLOW_ROCK_DRIP_COMP,
+    SLOW_COMBO_WINDOW_BONUS,
     MIN_SPEED_MULT,
     MAX_SNAKE_LENGTH,
     STONE_FEAST_THRESHOLD,
     UPGRADE_EVERY_LEVELS,
     LEVEL_FREEZE_DURATION,
+    QUAKE_CLEAR_MAX_PTS,
+    QUAKE_CLEAR_SHIELD_SEC,
     COMBO_WINDOW,
     MAX_COMBO_COUNT,
     BERSERK_SPEED_BONUS,
@@ -207,6 +212,8 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     getScoreForLevel,
     getLevelForScore,
     getFoodBasePoints,
+    getRockSmashBasePts,
+    recalcBaseInterval,
     loadBestScore,
     loadBestEndlessLevel,
     loadHardClearCount,
@@ -702,13 +709,15 @@ assert.strictEqual(slowCard.canPick(), false, '从容步伐最多叠加 2 次');
 const quakeCard = g.UPGRADE_POOL.find((u) => u.id === 'quake_clear');
 g.startGame();
 g.setTestState({
-  obstacles: Array.from({ length: 10 }, (_, i) => ({ x: 2 + i, y: 3, warnTimer: 0 }))
+  obstacles: Array.from({ length: 10 }, (_, i) => ({ x: 2 + i, y: 3, warnTimer: 0 })),
+  shieldTimer: 0
 });
 assert(quakeCard.getDesc().includes('70%'), '碎石冲击描述应包含 70%');
 quakeCard.apply();
 assert.strictEqual(g.getSnapshot().obstacles.length, 3, '10 块石头触发 70% 碎石冲击后应保留 3 块');
 assert.strictEqual(g.getSnapshot().rocksSmashed, 7, '碎石冲击应计入被震碎的 7 块石头');
 assert.strictEqual(g.getSnapshot().score, 35, '碎石冲击每块石头应 +5 分（7*5=35）');
+assert.strictEqual(g.getSnapshot().shieldTimer, 3.0, '碎石冲击清屏后应附带 3.0s 短时护盾');
 
 const trimCard = g.UPGRADE_POOL.find((u) => u.id === 'trim_body');
 g.startGame();
@@ -1209,7 +1218,7 @@ snap = g.getSnapshot();
 assert.strictEqual(snap.endlessMode, false);
 assert(snap.activeMutator && g.ENDLESS_MUTATORS[snap.activeMutator], '标准模式主线 Lv.15 应激活场地词缀');
 assert(env.getEl('buff-bar').innerHTML.includes('词缀·'), '主线词缀应在状态条中展示');
-assert(env.getEl('level-banner').textContent.includes('精英阶段·词缀激活'), '首次激活主线词缀应弹出精英阶段横幅');
+assert(env.getEl('level-banner').textContent.includes('精英词缀'), '首次激活主线词缀应弹出精英词缀横幅');
 
 // 校验主线（endlessMode=false）下词缀效果实际生效（碎石狂潮）
 g.setTestState({
@@ -1235,8 +1244,8 @@ assert(greedyCard && greedyCard.rarity === 'uncommon' && greedyCard.isDoubleEdge
 g.startGame();
 greedyCard.apply();
 assert.strictEqual(greedyCard.canPick(), false, '狂暴胃口不可叠加');
-assert.strictEqual(g.getSnapshot().scoreMultiplier, 2.0, '狂暴胃口应使得分倍率 +1.0（+100%）');
-assert.strictEqual(g.getSnapshot().extraFoodGrowth, 1, '狂暴胃口代价：吃苹果额外多长 1 节');
+assert.strictEqual(g.getSnapshot().scoreMultiplier, 1.9, '狂暴胃口应使得分倍率 +0.9（+90%）');
+assert.strictEqual(g.getSnapshot().extraFoodGrowth, 1, '狂暴胃口代价：吃苹果与金果额外多长 1 节');
 // 验证与「黄金胃口」互不抢占叠加次数
 assert.strictEqual(scoreCard.canPick(), true, '拿到狂暴胃口后黄金胃口仍可正常抽取');
 g.setTestState({
@@ -1247,13 +1256,17 @@ g.setTestState({
   powerUp: null,
   score: 0
 });
-g.stepGame(); // 吃苹果：10 * 2.0 = 20 分，蛇身 3->4，pendingGrowth=1
-assert.strictEqual(g.getSnapshot().score, 20, '狂暴胃口下 Lv.1 吃苹果应得 20 分');
+g.stepGame(); // 吃苹果：10 * 1.9 = 19 分，蛇身 3->4，pendingGrowth=1
+assert.strictEqual(g.getSnapshot().score, 19, '狂暴胃口下 Lv.1 吃苹果应得 19 分');
 assert.strictEqual(g.getSnapshot().snake.length, 4);
 assert.strictEqual(g.getSnapshot().pendingGrowth, 1);
 g.setTestState({ food: { x: 18, y: 18 } });
 g.stepGame(); // 下一步消耗额外成长：蛇身 4->5
 assert.strictEqual(g.getSnapshot().snake.length, 5, '狂暴胃口代价应使每颗苹果总计成长 2 节');
+g.setTestState({ pendingGrowth: 0, score: 0, doubleTimer: 0 });
+g.applyPowerUp({ x: 10, y: 10, type: 'gold' });
+assert.strictEqual(g.getSnapshot().score, 57, '狂暴胃口下金果应得 round(30*1.9)=57 分');
+assert.strictEqual(g.getSnapshot().pendingGrowth, 3, '狂暴胃口代价应同样作用于金果（2+1=3 节）');
 
 const berserkCard = g.UPGRADE_POOL.find((u) => u.id === 'berserk_rush');
 assert(berserkCard && berserkCard.rarity === 'rare' && berserkCard.isDoubleEdged === true, '极速猎手应为稀有双刃卡');
@@ -1681,7 +1694,77 @@ assert(env.getEl('mode-hard-btn').textContent.includes('🏅'), '困难通关后
   assert.deepStrictEqual(g.getSnapshot().directionQueue, [{ x: 0, y: 1 }], '透视准备态滑动应同步入队转向');
   env.dispatchDocEvent('touchend', { changedTouches: [{ clientX: 50, clientY: 90 }], target: bodyTarget });
 
+  // 16. 校验第二轮 AI 试玩 5 项仓库侧专项优化
+  // 16a. 从容步伐每层补偿落石间隔 +12% 与连击窗口 +0.5s
+  assert.strictEqual(g.SLOW_ROCK_DRIP_COMP, 0.12);
+  assert.strictEqual(g.SLOW_COMBO_WINDOW_BONUS, 0.5);
+  g.setDifficulty('standard');
+  g.startGame();
+  assert.strictEqual(g.getEffectiveRockDripInterval(15), 7.0);
+  slowCard.apply(); // Lv.1
+  assert.strictEqual(g.getEffectiveRockDripInterval(15), 7.84, '从容步伐 1 层应使 Lv.15 落石间隔 +12% 至 7.84s');
+  slowCard.apply(); // Lv.2
+  assert.strictEqual(g.getEffectiveRockDripInterval(15), 8.68, '从容步伐 2 层应使 Lv.15 落石间隔 +24% 至 8.68s');
+  comboCard.apply();
+  g.setTestState({
+    snake: [{ x: 5, y: 10 }, { x: 4, y: 10 }, { x: 3, y: 10 }],
+    direction: { x: 1, y: 0 },
+    food: { x: 6, y: 10 },
+    obstacles: [],
+    powerUp: null,
+    activeMutator: null
+  });
+  g.stepGame();
+  assert.strictEqual(g.getSnapshot().comboTimer, 6.0, '从容步伐 2 层应使 5s 连击窗口延长 +1.0s 至 6.0s');
+
+  // 16b. 幸运磁力 Lv.2 在场上已有道具时自动重置停留时间（不再静默无效）
+  const magnetCard = g.UPGRADE_POOL.find((u) => u.id === 'magnet_aura');
+  g.startGame();
+  g.setTestState({ magnetLevel: 1, powerUp: { x: 2, y: 2, type: 'gold', ttl: 1.2, maxTtl: 9.5 } });
+  assert(magnetCard.getDesc().includes('重置停留时间'), '幸运磁力 Lv.2 描述应说明已有道具时重置停留时间');
+  magnetCard.apply();
+  assert.strictEqual(g.getSnapshot().magnetLevel, 2);
+  assert.strictEqual(g.getSnapshot().powerUp.ttl, 9.5, '已有道具时升级幸运磁力 Lv.2 应重置满停留时间');
+
+  // 16c. 最快步长下限 MIN_STEP_INTERVAL=72ms（困难高压 + 极速猎手 + 狂飙时刻不再突破人类反应极限）
+  assert.strictEqual(g.MIN_STEP_INTERVAL, 72);
+  g.setDifficulty('hard');
+  g.startGame();
+  g.setTestState({ level: 18, hasBerserkRush: true, activeMutator: 'overdrive', slowUpgradeCount: 0 });
+  g.recalcBaseInterval();
+  assert.strictEqual(g.getSnapshot().baseStepInterval, 72, '困难 Lv.18 叠加极速猎手与狂飙时刻应钳位在 72ms 下限');
+  g.setDifficulty('standard');
+
+  // 16d. 碎石冲击单卡得分封顶 QUAKE_CLEAR_MAX_PTS=160 且附带 3.0s 短时护盾
+  assert.strictEqual(g.QUAKE_CLEAR_MAX_PTS, 160);
+  assert.strictEqual(g.QUAKE_CLEAR_SHIELD_SEC, 3.0);
+  g.startGame();
+  g.setTestState({
+    level: 15,
+    score: 1200,
+    shieldTimer: 0,
+    doubleTimer: 5,
+    activeMutator: 'fragile_aegis',
+    hasBerserkRush: true,
+    hasStarfallResonance: true,
+    obstacles: Array.from({ length: 25 }, (_, i) => ({ x: i % 20, y: 2 + Math.floor(i / 20), warnTimer: 0 }))
+  });
+  quakeCard.apply();
+  assert.strictEqual(g.getSnapshot().score - 1200, 160, '极限乘区叠加下碎石冲击得分应封顶 160 分，避免连跳多关');
+  assert.strictEqual(g.getSnapshot().shieldTimer, 3.0, '碎石冲击应附带 3.0s 护盾');
+
+  // 16e. 双倍落石词缀增加碎石基础分 +3（5->8），且 5 大词缀播报文案精简可读
+  g.startGame();
+  g.setTestState({ activeMutator: null, hasBerserkRush: false, hasStarfallResonance: false });
+  assert.strictEqual(g.getRockSmashBasePts(), 5);
+  g.setTestState({ activeMutator: 'double_meteor' });
+  assert.strictEqual(g.getRockSmashBasePts(), 8, '双倍落石词缀下碎石基础分应由 5 提升至 8（+3）');
+  for (const [k, mut] of Object.entries(g.ENDLESS_MUTATORS)) {
+    const sampleBanner = `Lv.15 精英词缀【${mut.name}】：${mut.desc}`;
+    assert(sampleBanner.length <= 38, `词缀 ${k} 横幅文案应精简至 38 字内，实际 ${sampleBanner.length} 字：${sampleBanner}`);
+  }
+
   g.gameLoop(1500);
   assert.strictEqual(env.getSaveDepth(), 0, 'Canvas save/restore 深度必须归零');
-  console.log('✓ 全部仓库模块自动化回归测试通过！（含全部 8 项游戏性专项改进 + 状态栏/移动端手势 + 全玩法回归）');
+  console.log('✓ 全部仓库模块自动化回归测试通过！（含第二轮 6 项试玩专项优化 + 第一轮 8 项改进 + 全玩法回归）');
 })();

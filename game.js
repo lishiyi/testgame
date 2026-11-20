@@ -226,12 +226,13 @@ const UPGRADE_POOL = [
     id: 'slow_pace',
     name: '从容步伐',
     rarity: 'common',
-    getDesc: () => '永久放缓自身移动速度，高压关卡转向更从容',
+    getDesc: () => '永久放缓移动速度，同时落石间隔 +12%、连击窗口 +0.5s，转向更从容',
     canPick: () => slowUpgradeCount < 2,
     apply: () => {
       slowUpgradeCount += 1;
       recalcBaseInterval();
-      addFloatingText(snake[0].x, snake[0].y, '移速放缓!', 'hsl(196, 90%, 72%)');
+      renderRockDripChip();
+      addFloatingText(snake[0].x, snake[0].y, '移速放缓 · 落石减速!', 'hsl(196, 90%, 72%)');
     }
   },
   {
@@ -252,7 +253,8 @@ const UPGRADE_POOL = [
     rarity: 'common',
     getDesc: () => {
       const cnt = Math.min(obstacles.length, Math.max(1, Math.round(obstacles.length * 0.7)));
-      return `立即震碎场上 70%（${cnt} 块）岩石障碍，每块 +${getRockSmashBasePts()} 分`;
+      const pts = Math.min(QUAKE_CLEAR_MAX_PTS, calcDoublePts(cnt * getRockSmashBasePts()));
+      return `立即震碎 70%（${cnt} 块）岩石获 +${pts} 分（上限 ${QUAKE_CLEAR_MAX_PTS}），并获 ${QUAKE_CLEAR_SHIELD_SEC} 秒护盾`;
     },
     canPick: () => obstacles.length >= 4,
     apply: () => {
@@ -266,11 +268,13 @@ const UPGRADE_POOL = [
       const cleared = obstacles.splice(0, removeCount);
       cleared.forEach((rock) => spawnBurst(rock.x, rock.y, '32, 22%, 62%', 10));
       registerRocksSmashed(cleared.length);
-      score += calcDoublePts(cleared.length * getRockSmashBasePts());
+      const pts = Math.min(QUAKE_CLEAR_MAX_PTS, calcDoublePts(cleared.length * getRockSmashBasePts()));
+      score += pts;
+      shieldTimer = Math.max(shieldTimer, QUAKE_CLEAR_SHIELD_SEC);
       shakeTimer = Math.max(shakeTimer, 0.14);
       triggerHaptic(16);
       playTone('smash');
-      addFloatingText(head.x, head.y, `震碎 ${cleared.length} 块岩石!`, 'hsl(42, 95%, 68%)');
+      addFloatingText(head.x, head.y, `震碎 ${cleared.length} 石 +${pts} · ${QUAKE_CLEAR_SHIELD_SEC}s盾!`, 'hsl(42, 95%, 68%)');
     }
   },
   {
@@ -376,12 +380,12 @@ const UPGRADE_POOL = [
     name: '狂暴胃口',
     rarity: 'uncommon',
     isDoubleEdged: true,
-    getDesc: () => `苹果与金果得分永久 +100%（${scoreMultiplier.toFixed(1)}x→${(scoreMultiplier + 1.0).toFixed(1)}x）；代价：吃苹果额外多长 1 节蛇身`,
+    getDesc: () => `苹果与金果得分永久 +90%（${scoreMultiplier.toFixed(1)}x→${(scoreMultiplier + 0.9).toFixed(1)}x）；代价：吃苹果与金果均额外多长 1 节蛇身`,
     canPick: () => !hasGreedyMaw,
     apply: () => {
       hasGreedyMaw = true;
       extraFoodGrowth += 1;
-      scoreMultiplier = +(scoreMultiplier + 1.0).toFixed(1);
+      scoreMultiplier = +(scoreMultiplier + 0.9).toFixed(1);
       addFloatingText(snake[0].x, snake[0].y, `狂暴胃口 ${scoreMultiplier.toFixed(1)}x!`, 'hsl(32, 98%, 66%)');
     }
   },
@@ -391,12 +395,18 @@ const UPGRADE_POOL = [
     rarity: 'rare',
     getDesc: () => magnetLevel === 0
       ? '自动隔空吸取周围 1 格内的苹果与道具，且道具刷新加快 25%'
-      : '道具吸附范围扩大至周围 2 格（5×5），刷新再加快 25% 并立即召唤一个随机道具',
+      : '道具吸附扩至周围 2 格（5×5），刷新再加快 25%；无道具立即召唤，已有则重置停留时间',
     canPick: () => magnetLevel < 2,
     apply: () => {
       magnetLevel += 1;
-      if (!powerUp) spawnPowerUp();
-      addFloatingText(snake[0].x, snake[0].y, magnetLevel === 1 ? '磁力光环激活!' : '磁力 2 格强化!', 'hsl(276, 96%, 80%)');
+      let suffix = '';
+      if (!powerUp) {
+        spawnPowerUp();
+      } else if (magnetLevel >= 2) {
+        powerUp.ttl = powerUp.maxTtl;
+        suffix = ' · 道具续时!';
+      }
+      addFloatingText(snake[0].x, snake[0].y, (magnetLevel === 1 ? '磁力光环激活!' : '磁力 2 格强化!') + suffix, 'hsl(276, 96%, 80%)');
     }
   },
   {
@@ -472,7 +482,7 @@ function recalcBaseInterval() {
   const mutGain = activeMutator === 'overdrive' ? 0.12 : 0;
   const rawMult = Math.min(2.8, cfg.initialSpeedMult + levelGain + berserkGain + mutGain - slowUpgradeCount * SLOW_UPGRADE_STEP);
   const clampedMult = Math.max(MIN_SPEED_MULT, rawMult);
-  baseStepInterval = Math.round(INITIAL_INTERVAL / clampedMult);
+  baseStepInterval = Math.max(MIN_STEP_INTERVAL, Math.round(INITIAL_INTERVAL / clampedMult));
 }
 
 function getEffectiveInterval() {
@@ -553,10 +563,11 @@ function registerRocksSmashed(count) {
 }
 
 function getRockSmashBasePts() {
+  const basePts = 5 + (activeMutator === 'double_meteor' ? 3 : 0);
   const mutMult = activeMutator === 'fragile_aegis' ? 2 : 1;
   const berserkMult = hasBerserkRush ? 2 : 1;
   const starMult = hasStarfallResonance ? 1.3 : 1;
-  return Math.round(5 * mutMult * berserkMult * starMult);
+  return Math.round(basePts * mutMult * berserkMult * starMult);
 }
 
 function getEffectiveRockDripInterval(lv = level) {
@@ -564,7 +575,8 @@ function getEffectiveRockDripInterval(lv = level) {
   if (base <= 0) return 0;
   const diffMult = getDifficultyCfg().rockDripMult;
   const mutMult = activeMutator === 'double_meteor' ? 0.7 : 1.0;
-  return +(base * diffMult * mutMult).toFixed(2);
+  const slowMult = 1 + slowUpgradeCount * SLOW_ROCK_DRIP_COMP;
+  return +(base * diffMult * mutMult * slowMult).toFixed(2);
 }
 
 function rollEndlessMutator(forcedKey = null) {
@@ -797,7 +809,7 @@ function checkLevelUp() {
 
     playTone(pendingUpgradeLevels.length > 0 ? 'upgrade' : 'levelup');
     if (rotatedMutator) {
-      const labelPrefix = hadMutatorBefore ? `Lv.${level} 词缀轮换` : `Lv.${level} 精英阶段·词缀激活`;
+      const labelPrefix = hadMutatorBefore ? `Lv.${level} 词缀轮换` : `Lv.${level} 精英词缀`;
       showLevelBanner(`${labelPrefix}【${rotatedMutator.name}】：${rotatedMutator.desc}`, { isMutator: true, duration: 4.2 });
     } else if (spawnedRocks > 0) {
       showLevelBanner(`Lv.${level} 关卡提升！注意红色落石预警`);
@@ -1129,7 +1141,7 @@ function continueEndlessMode() {
   runSummaryEl.classList.add('hidden');
   overlayEl.classList.remove('post-upgrade-ready');
   overlayEl.classList.add('hidden');
-  showLevelBanner(`无尽开启！场地词缀【${mut.name}】：${mut.desc}`, { isMutator: true, duration: 4.2 });
+  showLevelBanner(`无尽开启【${mut.name}】：${mut.desc}`, { isMutator: true, duration: 4.2 });
   if (snake.length > 0) {
     addFloatingText(snake[0].x, snake[0].y, `∞ 词缀·${mut.name}!`, 'hsl(43, 98%, 70%)');
   }
@@ -1750,7 +1762,8 @@ function registerComboBonus() {
   if (comboUpgradeLevel <= 0) return 0;
   comboCount = Math.min(MAX_COMBO_COUNT, comboCount + 1);
   const overdriveBonus = activeMutator === 'overdrive' ? 2.0 : 0;
-  comboTimer = COMBO_WINDOW + (comboUpgradeLevel > 1 ? 1.0 : 0) + overdriveBonus;
+  const slowBonus = slowUpgradeCount * SLOW_COMBO_WINDOW_BONUS;
+  comboTimer = COMBO_WINDOW + (comboUpgradeLevel > 1 ? 1.0 : 0) + overdriveBonus + slowBonus;
   renderBuffBar();
   const base = comboCount >= 2 ? (comboCount - 1) * (4 * comboUpgradeLevel) : 0;
   return hasBerserkRush ? base * 2 : base;
@@ -1774,7 +1787,7 @@ function applyPowerUp(item) {
     const comboBonus = registerComboBonus();
     const pts = calcDoublePts(Math.round(30 * scoreMultiplier * starFruitMult) + comboBonus + treasureBonus);
     score += pts;
-    addPendingGrowth(2);
+    addPendingGrowth(2 + extraFoodGrowth);
     spawnBurst(item.x, item.y, '43, 96%, 58%', 14);
     addFloatingText(item.x, item.y, `+${pts} 金色果实!`, 'hsl(43, 96%, 64%)');
   } else if (item.type === 'double') {

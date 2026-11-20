@@ -6,8 +6,11 @@ const GRID_COUNT = 20;              // 棋盘格数：20 x 20
 const BASE_SIZE = 400;              // 逻辑画布尺寸 (px)
 const CELL_SIZE = BASE_SIZE / GRID_COUNT;
 const INITIAL_INTERVAL = 140;       // Lv.1 初始每步间隔 (毫秒)
+const MIN_STEP_INTERVAL = 72;       // 最快步长下限 (毫秒，约 13.9 步/秒，保证困难与触屏可控)
 const SPEED_GAIN_PER_LEVEL = 0.04;  // 每升 1 级速度倍率提升 0.04（隐藏属性）
 const SLOW_UPGRADE_STEP = 0.20;     // 每次减速强化降低的速度倍率
+const SLOW_ROCK_DRIP_COMP = 0.12;   // 每层「从容步伐」补偿定时落石间隔 +12%
+const SLOW_COMBO_WINDOW_BONUS = 0.5;// 每层「从容步伐」补偿连击维持窗口 +0.5s
 const MIN_SPEED_MULT = 0.78;        // 隐藏速度倍率最低下限（防止简单双减速过于拖沓）
 const POINTS_PER_LEVEL = 60;        // 初始每级基础升级分数（Lv.1–5）
 const CLEAR_LEVEL = 20;             // 达到第 20 关即判定通关胜利
@@ -23,6 +26,8 @@ const HARD_MAX_LIVES = 6;           // 标准模式强化可提升的最大生�
 const INVULN_DURATION = 2.0;        // 受伤后的短暂无敌保护时间 (秒)
 const NIRVANA_INVULN_DURATION = 3.0;// 涅槃重生后的无敌保护时间 (秒)
 const LEVEL_FREEZE_DURATION = 3.2;  // 「时停」每关开始冻结时长 (秒)
+const QUAKE_CLEAR_MAX_PTS = 160;    // 「碎石冲击」单次得分上限（防止叠加乘区连跳多关）
+const QUAKE_CLEAR_SHIELD_SEC = 3.0; // 「碎石冲击」清屏后附带的短时护盾时长 (秒)
 const PHASE_BODY_COOLDOWN = 10.0;   // 「相位穿身」冷却充能间隔 (秒)
 const PHASE_BODY_DURATION = 2.0;    // 「相位穿身」触发时自动获得的幽灵脱困时长 (秒)
 const COMBO_WINDOW = 5.0;           // 「连击」连续吃果有效时间窗口 (秒)
@@ -212,27 +217,27 @@ const ENDLESS_MUTATORS = {
   moving_food: {
     id: 'moving_food',
     name: '游走果实',
-    desc: '苹果每 3.5s 向邻格游走 1 格，吃苹果基础得分 +6'
+    desc: '苹果每3.5s游走1格，苹果分+6'
   },
   double_meteor: {
     id: 'double_meteor',
     name: '双倍落石',
-    desc: '定时落石加快 30% 且每次落/移 2 块，炸弹刷新权重 +6'
+    desc: '落石+30%且双落，炸弹增多、碎石+3分'
   },
   fragile_aegis: {
     id: 'fragile_aegis',
     name: '碎石狂潮',
-    desc: '拾取护盾道具时长减半，所有碎石基础得分 ×2'
+    desc: '护盾道具时长减半，碎石基础分×2'
   },
   swift_loot: {
     id: 'swift_loot',
     name: '疾速秘宝',
-    desc: '道具刷新加快 35% 且优先就近刷新，场上停留时间缩短 35%'
+    desc: '道具刷新+35%就近生成，停留-35%'
   },
   overdrive: {
     id: 'overdrive',
     name: '狂飙时刻',
-    desc: '移动速度加快 12%，连击维持窗口 +2s 且吃苹果基础分 +6'
+    desc: '移速+12%，连击窗口+2s且苹果分+6'
   }
 };
 
