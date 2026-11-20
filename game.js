@@ -9,6 +9,7 @@ const levelEl = document.getElementById('level-value');
 const bestScoreEl = document.getElementById('best-score-value');
 const modeBadgeEl = document.getElementById('mode-badge');
 const modeSelectorEl = document.getElementById('mode-selector');
+const modeEasyBtn = document.getElementById('mode-easy-btn');
 const modeStandardBtn = document.getElementById('mode-standard-btn');
 const modeHardBtn = document.getElementById('mode-hard-btn');
 const modeDescEl = document.getElementById('mode-desc');
@@ -23,10 +24,12 @@ const levelBannerEl = document.getElementById('level-banner');
 const upgradeOverlayEl = document.getElementById('upgrade-overlay');
 const upgradeBadgeEl = document.getElementById('upgrade-badge');
 const upgradeListEl = document.getElementById('upgrade-list');
+const upgradeRerollBtn = document.getElementById('upgrade-reroll-btn');
 const overlayEl = document.getElementById('board-overlay');
 const overlayTitleEl = document.getElementById('overlay-title');
 const overlayDescEl = document.getElementById('overlay-desc');
 const overlayTipsEl = document.getElementById('overlay-tips');
+const pauseUpgradesEl = document.getElementById('pause-upgrades');
 const runSummaryEl = document.getElementById('run-summary');
 const endlessBtn = document.getElementById('endless-btn');
 const startBtn = document.getElementById('start-btn');
@@ -65,7 +68,7 @@ let comboTimer = 0;
 let particles = [];
 let floatingTexts = [];
 
-let difficulty = 'standard'; // 'standard' | 'hard'
+let difficulty = 'standard'; // 'easy' | 'standard' | 'hard'（开局默认标准模式）
 let hardClearCount = loadHardClearCount();
 let maxLives = INITIAL_LIVES;
 let lives = INITIAL_LIVES;
@@ -73,8 +76,8 @@ let score = 0;
 let level = 1;
 let endlessMode = false;
 let activeMutator = null; // 当前激活场地词缀 key（主线高关卡与无尽共用）
-let bestScore = loadBestScore();
-let bestEndlessLevel = loadBestEndlessLevel();
+let bestScore = loadBestScore(difficulty);
+let bestEndlessLevel = loadBestEndlessLevel(difficulty);
 
 // 肉鸽永久强化属性与单局统计（每局重置）
 let slowUpgradeCount = 0;
@@ -88,6 +91,7 @@ let hasPhaseBody = false;
 let phaseBodyCooldown = 0;    // 「相位穿身」冷却剩余时间 (秒，0 表示就绪)
 let nirvanaCharges = 0;
 let nirvanaUsed = false;
+let hasStarfallResonance = false; // 传说卡「星陨共鸣」
 let blastExpertLevel = 0;     // 「爆破专家」是否已获得（0/1，不可叠加）
 let hasStoneFeast = false;    // 是否持有「以石养身」
 let stoneFeastProgress = 0;   // 「以石养身」当前累计碎石进度
@@ -96,6 +100,7 @@ let extraFoodGrowth = 0;      // 每次吃普通苹果额外增加的蛇身节�
 let hasBerserkRush = false;   // 双刃卡「极速猎手」
 let treasureSenseLevel = 0;   // 「寻宝嗅觉」层数（0~2）
 let emergencyArmorLevel = 0;  // 「应急护甲」层数（0~2）
+let rerollsLeft = INITIAL_REROLLS; // 每局三选一剩余重随次数
 
 let pendingUpgradeLevels = []; // Array<number | 'chest'>
 let currentChoices = [];
@@ -119,24 +124,37 @@ function getDifficultyCfg() {
 
 function syncDifficultyUI() {
   const cfg = getDifficultyCfg();
+  const isEasy = difficulty === 'easy';
+  const isStandard = difficulty === 'standard';
   const isHard = difficulty === 'hard';
-  if (modeStandardBtn) modeStandardBtn.classList.toggle('active', !isHard);
+  if (modeEasyBtn) modeEasyBtn.classList.toggle('active', isEasy);
+  if (modeStandardBtn) modeStandardBtn.classList.toggle('active', isStandard);
   if (modeHardBtn) {
     modeHardBtn.classList.toggle('active', isHard);
     modeHardBtn.textContent = hardClearCount > 0 ? `困难模式 🏅` : '困难模式';
   }
   if (modeDescEl) {
     modeDescEl.textContent = cfg.summary;
+    modeDescEl.classList.toggle('easy', isEasy);
     modeDescEl.classList.toggle('hard', isHard);
   }
   if (modeBadgeEl) {
-    modeBadgeEl.classList.toggle('hidden', !isHard);
+    modeBadgeEl.classList.toggle('hidden', isStandard);
+    modeBadgeEl.classList.toggle('easy', isEasy);
+    if (isEasy) {
+      modeBadgeEl.textContent = '🌿 简单';
+    } else if (isHard) {
+      modeBadgeEl.textContent = '🔥 困难';
+    }
   }
 }
 
 function setDifficulty(mode) {
   if (!DIFFICULTY_CONFIG[mode]) return;
   difficulty = mode;
+  bestScore = loadBestScore(difficulty);
+  bestEndlessLevel = loadBestEndlessLevel(difficulty);
+  bestScoreEl.textContent = String(bestScore);
   syncDifficultyUI();
   if (state === 'idle') {
     const cfg = getDifficultyCfg();
@@ -149,7 +167,7 @@ function setDifficulty(mode) {
 }
 
 // ------------------------------------------
-// 三选一强化词条池（共 16 项：普通 > 罕见 > 稀有 > 传说，含 2 张高风险双刃卡）
+// 三选一强化词条池（共 19 项：8 普 / 5 罕 / 4 稀 / 2 传，含 2 张高风险双刃卡）
 // ------------------------------------------
 const UPGRADE_POOL = [
   {
@@ -398,6 +416,17 @@ const UPGRADE_POOL = [
       nirvanaCharges = 1;
       addFloatingText(snake[0].x, snake[0].y, '🔥 涅槃之力加身!', 'hsl(30, 100%, 74%)');
     }
+  },
+  {
+    id: 'starfall_resonance',
+    name: '星陨共鸣',
+    rarity: 'legendary',
+    getDesc: () => '拾取任意场上道具时，自动震碎周围 5×5 岩石并计分，且果实与碎石得分永久 +30%',
+    canPick: () => !hasStarfallResonance,
+    apply: () => {
+      hasStarfallResonance = true;
+      addFloatingText(snake[0].x, snake[0].y, '✦ 星陨共鸣觉醒!', 'hsl(42, 100%, 74%)');
+    }
   }
 ];
 
@@ -410,7 +439,8 @@ function recalcBaseInterval() {
     Math.min(level - 1, 19) * (SPEED_GAIN_PER_LEVEL * cfg.speedGainMult) +
     Math.max(0, level - CLEAR_LEVEL) * (0.025 * cfg.speedGainMult);
   const berserkGain = hasBerserkRush ? BERSERK_SPEED_BONUS : 0;
-  const rawMult = Math.min(2.8, cfg.initialSpeedMult + levelGain + berserkGain - slowUpgradeCount * SLOW_UPGRADE_STEP);
+  const mutGain = activeMutator === 'overdrive' ? 0.12 : 0;
+  const rawMult = Math.min(2.8, cfg.initialSpeedMult + levelGain + berserkGain + mutGain - slowUpgradeCount * SLOW_UPGRADE_STEP);
   const clampedMult = Math.max(MIN_SPEED_MULT, rawMult);
   baseStepInterval = Math.round(INITIAL_INTERVAL / clampedMult);
 }
@@ -423,7 +453,8 @@ function getEffectiveInterval() {
 function getPowerUpCooldown() {
   const magnetFactor = magnetLevel === 0 ? 1 : (magnetLevel === 1 ? 0.75 : 0.56);
   const treasureFactor = 1 - treasureSenseLevel * 0.15;
-  return +(4.8 * magnetFactor * treasureFactor).toFixed(2);
+  const mutFactor = activeMutator === 'swift_loot' ? 0.65 : 1.0;
+  return +(4.8 * magnetFactor * treasureFactor * mutFactor).toFixed(2);
 }
 
 function isObstacleAt(x, y, solidOnly = false) {
@@ -484,7 +515,7 @@ function registerRocksSmashed(count) {
       if (head) addFloatingText(head.x, head.y, '以石养身 +1 生命!', 'hsl(152, 85%, 66%)');
     } else {
       shieldTimer += STONE_FEAST_SHIELD_SEC;
-      if (head) addFloatingText(head.x, head.y, `以石养身 +${STONE_FEAST_SHIELD_SEC}s 护盾!`, 'hsl(164, 90%, 66%)');
+      if (head) addFloatingText(head.x, head.y, `以石养身 +${STONE_FEAST_SHIELD_SEC}s 护盾!`, 'hsl(164, 90%, 68%)');
     }
   }
   if (triggered) updateHUD();
@@ -494,7 +525,8 @@ function registerRocksSmashed(count) {
 function getRockSmashBasePts() {
   const mutMult = activeMutator === 'fragile_aegis' ? 2 : 1;
   const berserkMult = hasBerserkRush ? 2 : 1;
-  return 5 * mutMult * berserkMult;
+  const starMult = hasStarfallResonance ? 1.3 : 1;
+  return Math.round(5 * mutMult * berserkMult * starMult);
 }
 
 function getEffectiveRockDripInterval(lv = level) {
@@ -515,6 +547,7 @@ function rollEndlessMutator(forcedKey = null) {
   }
   activeMutator = nextKey;
   foodMoveTimer = 0;
+  recalcBaseInterval();
   return ENDLESS_MUTATORS[nextKey];
 }
 
@@ -648,7 +681,7 @@ function checkLevelUp() {
 
     if (endlessMode && level > bestEndlessLevel) {
       bestEndlessLevel = level;
-      saveBestEndlessLevel(bestEndlessLevel);
+      saveBestEndlessLevel(bestEndlessLevel, difficulty);
     }
 
     if (!endlessMode && level >= CLEAR_LEVEL) {
@@ -710,45 +743,61 @@ function checkLevelUp() {
   }
 }
 
-function pickWeightedUpgrades(count = 3) {
-  const remaining = UPGRADE_POOL.filter((u) => u.canPick());
-  const picked = [];
-
-  while (picked.length < count && remaining.length > 0) {
-    const totalWeight = remaining.reduce(
-      (sum, item) => sum + RARITY_CONFIG[item.rarity].weight,
-      0
-    );
-    let roll = Math.random() * totalWeight;
-    let chosenIdx = remaining.length - 1;
-    for (let i = 0; i < remaining.length; i++) {
-      roll -= RARITY_CONFIG[remaining[i].rarity].weight;
-      if (roll <= 0) {
-        chosenIdx = i;
-        break;
+function pickWeightedUpgrades(count = 3, excludeIds = null) {
+  const allEligible = UPGRADE_POOL.filter((u) => u.canPick());
+  const pickFromPool = (pool, needed) => {
+    const rem = pool.slice();
+    const out = [];
+    while (out.length < needed && rem.length > 0) {
+      const totalWeight = rem.reduce(
+        (sum, item) => sum + RARITY_CONFIG[item.rarity].weight,
+        0
+      );
+      let roll = Math.random() * totalWeight;
+      let chosenIdx = rem.length - 1;
+      for (let i = 0; i < rem.length; i++) {
+        roll -= RARITY_CONFIG[rem[i].rarity].weight;
+        if (roll <= 0) {
+          chosenIdx = i;
+          break;
+        }
       }
+      out.push(rem.splice(chosenIdx, 1)[0]);
     }
-    picked.push(remaining.splice(chosenIdx, 1)[0]);
+    return out;
+  };
+
+  if (excludeIds && excludeIds.size > 0) {
+    const freshPool = allEligible.filter((u) => !excludeIds.has(u.id));
+    const picked = pickFromPool(freshPool, count);
+    if (picked.length < count) {
+      const pickedIds = new Set(picked.map((u) => u.id));
+      const fallbackPool = allEligible.filter((u) => !pickedIds.has(u.id));
+      picked.push(...pickFromPool(fallbackPool, count - picked.length));
+    }
+    return picked;
   }
 
-  return picked;
+  return pickFromPool(allEligible, count);
 }
 
-function openNextUpgradeChoice() {
-  if (pendingUpgradeLevels.length === 0 || state !== 'running') return;
+function syncRerollButton() {
+  if (!upgradeRerollBtn) return;
+  const totalEligible = UPGRADE_POOL.filter((u) => u.canPick()).length;
+  const hasAlternatives = totalEligible > currentChoices.length;
+  const canReroll = state === 'choosing' && rerollsLeft > 0 && hasAlternatives;
+  upgradeRerollBtn.disabled = !canReroll;
+  if (rerollsLeft <= 0) {
+    upgradeRerollBtn.textContent = '🎲 换一批 (已用完)';
+  } else if (!hasAlternatives) {
+    upgradeRerollBtn.textContent = '🎲 无更多可换强化';
+  } else {
+    upgradeRerollBtn.textContent = `🎲 换一批 (剩余 ${rerollsLeft} 次)`;
+  }
+}
 
-  const source = pendingUpgradeLevels.shift();
-  currentChoices = pickWeightedUpgrades(3);
-  if (currentChoices.length === 0) return;
-
-  state = 'choosing';
-  pauseBtn.disabled = true;
-
-  upgradeBadgeEl.textContent = source === 'chest'
-    ? '🎁 神秘宝箱奖励'
-    : `Lv.${source} 里程碑奖励`;
+function renderUpgradeCards() {
   upgradeListEl.innerHTML = '';
-
   currentChoices.forEach((choice, idx) => {
     const rarityMeta = RARITY_CONFIG[choice.rarity];
     const riskBadge = choice.isDoubleEdged ? '<span class="risk-tag">双刃</span>' : '';
@@ -769,6 +818,36 @@ function openNextUpgradeChoice() {
     btn.addEventListener('click', () => selectUpgrade(idx));
     upgradeListEl.appendChild(btn);
   });
+  syncRerollButton();
+}
+
+function rerollUpgradeChoices() {
+  if (state !== 'choosing' || rerollsLeft <= 0) return false;
+  const totalEligible = UPGRADE_POOL.filter((u) => u.canPick()).length;
+  if (totalEligible <= currentChoices.length) return false;
+
+  const excludeIds = new Set(currentChoices.map((u) => u.id));
+  currentChoices = pickWeightedUpgrades(3, excludeIds);
+  rerollsLeft -= 1;
+  playTone('levelup');
+  renderUpgradeCards();
+  return true;
+}
+
+function openNextUpgradeChoice() {
+  if (pendingUpgradeLevels.length === 0 || state !== 'running') return;
+
+  const source = pendingUpgradeLevels.shift();
+  currentChoices = pickWeightedUpgrades(3);
+  if (currentChoices.length === 0) return;
+
+  state = 'choosing';
+  pauseBtn.disabled = true;
+
+  upgradeBadgeEl.textContent = source === 'chest'
+    ? '🎁 神秘宝箱奖励'
+    : `Lv.${source} 里程碑奖励`;
+  renderUpgradeCards();
 
   upgradeOverlayEl.classList.remove('hidden');
 }
@@ -827,6 +906,8 @@ function initGameData() {
   level = 1;
   endlessMode = false;
   activeMutator = null;
+  bestScore = loadBestScore(difficulty);
+  bestEndlessLevel = loadBestEndlessLevel(difficulty);
 
   slowUpgradeCount = 0;
   scoreBoostCount = 0;
@@ -839,6 +920,7 @@ function initGameData() {
   phaseBodyCooldown = 0;
   nirvanaCharges = 0;
   nirvanaUsed = false;
+  hasStarfallResonance = false;
   blastExpertLevel = 0;
   hasStoneFeast = false;
   stoneFeastProgress = 0;
@@ -847,6 +929,7 @@ function initGameData() {
   hasBerserkRush = false;
   treasureSenseLevel = 0;
   emergencyArmorLevel = 0;
+  rerollsLeft = INITIAL_REROLLS;
 
   pendingUpgradeLevels = [];
   currentChoices = [];
@@ -874,6 +957,7 @@ function initGameData() {
 
   levelBannerEl.classList.add('hidden');
   upgradeOverlayEl.classList.add('hidden');
+  if (pauseUpgradesEl) pauseUpgradesEl.classList.add('hidden');
 
   obstacles = createInitialObstacles();
   powerUp = null;
@@ -899,6 +983,7 @@ function startGame() {
   pauseBtn.textContent = '暂停';
   if (modeSelectorEl) modeSelectorEl.classList.add('hidden');
   overlayTipsEl.classList.add('hidden');
+  if (pauseUpgradesEl) pauseUpgradesEl.classList.add('hidden');
   runSummaryEl.classList.add('hidden');
   endlessBtn.classList.add('hidden');
   shareBtn.classList.add('hidden');
@@ -910,7 +995,7 @@ function continueEndlessMode() {
   endlessMode = true;
   if (level > bestEndlessLevel) {
     bestEndlessLevel = level;
-    saveBestEndlessLevel(bestEndlessLevel);
+    saveBestEndlessLevel(bestEndlessLevel, difficulty);
   }
   const mut = rollEndlessMutator();
   state = 'running';
@@ -927,6 +1012,7 @@ function continueEndlessMode() {
   pauseBtn.disabled = false;
   pauseBtn.textContent = '暂停';
   if (modeSelectorEl) modeSelectorEl.classList.add('hidden');
+  if (pauseUpgradesEl) pauseUpgradesEl.classList.add('hidden');
   endlessBtn.classList.add('hidden');
   shareBtn.classList.add('hidden');
   runSummaryEl.classList.add('hidden');
@@ -940,6 +1026,39 @@ function continueEndlessMode() {
   renderRockDripChip();
 }
 
+function buildGroupedUpgradeChipsHtml(emptyText) {
+  if (pickedUpgrades.length === 0) {
+    return `<span class="summary-upgrades-empty">${emptyText}</span>`;
+  }
+  const grouped = [];
+  const byName = new Map();
+  for (const u of pickedUpgrades) {
+    if (byName.has(u.name)) {
+      byName.get(u.name).count += 1;
+    } else {
+      const entry = { name: u.name, rarity: u.rarity, count: 1 };
+      byName.set(u.name, entry);
+      grouped.push(entry);
+    }
+  }
+  return grouped
+    .map((u) => `<span class="summary-chip rarity-${u.rarity}">${u.name}${u.count > 1 ? ` ×${u.count}` : ''}</span>`)
+    .join('');
+}
+
+function renderPauseUpgrades() {
+  if (!pauseUpgradesEl) return;
+  const modeLabel = getDifficultyCfg().label;
+  const chipsHtml = buildGroupedUpgradeChipsHtml('暂未解锁强化（Lv.3 解锁首次三选一）');
+  pauseUpgradesEl.innerHTML = `
+    <div class="pause-upgrades-header">
+      <span><strong>本局已选强化</strong>（共 ${pickedUpgrades.length} 项）</span>
+      <span class="pause-upgrades-meta">${modeLabel} · 重随 ${rerollsLeft}/${INITIAL_REROLLS}</span>
+    </div>
+    <div class="summary-upgrades">${chipsHtml}</div>
+  `;
+}
+
 function pauseGame(
   title = '已暂停',
   desc = '按空格键或点击下方按钮继续挑战。'
@@ -947,7 +1066,13 @@ function pauseGame(
   state = 'paused';
   pauseBtn.disabled = false;
   pauseBtn.textContent = '继续';
-  showOverlay(title, desc, '继续游戏', { showTips: false, showSummary: false, showMode: false });
+  renderPauseUpgrades();
+  showOverlay(title, desc, '继续游戏', {
+    showTips: false,
+    showPauseUpgrades: true,
+    showSummary: false,
+    showMode: false
+  });
 }
 
 function togglePause() {
@@ -958,6 +1083,7 @@ function togglePause() {
     stepAccumulator = 0;
     lastFrameTime = performance.now();
     pauseBtn.textContent = '暂停';
+    if (pauseUpgradesEl) pauseUpgradesEl.classList.add('hidden');
     overlayEl.classList.add('hidden');
   }
 }
@@ -969,15 +1095,14 @@ function autoPauseOnBackground() {
 }
 
 function renderRunSummary() {
-  const upgradesHtml = pickedUpgrades.length > 0
-    ? pickedUpgrades
-        .map((u) => `<span class="summary-chip rarity-${u.rarity}">${u.name}</span>`)
-        .join('')
-    : '<span class="summary-upgrades-empty">本局尚未解锁强化</span>';
+  const upgradesHtml = buildGroupedUpgradeChipsHtml('本局尚未解锁强化');
 
-  const modeTag = difficulty === 'hard'
-    ? '<span class="summary-fatal">🔥 困难模式</span> ｜ '
-    : '';
+  let modeTag = '';
+  if (difficulty === 'hard') {
+    modeTag = '<span class="summary-fatal">🔥 困难模式</span> ｜ ';
+  } else if (difficulty === 'easy') {
+    modeTag = '<span style="color: hsl(172, 86%, 72%); font-weight: 700;">🌿 简单模式</span> ｜ ';
+  }
   const totalHits = damageStats.wall + damageStats.rock + damageStats.self;
   const fatalPrefix = state === 'gameover' && lastHitCause
     ? `<span class="summary-fatal">死因：${CAUSE_LABELS[lastHitCause]}</span> ｜ `
@@ -1012,7 +1137,9 @@ function renderRunSummary() {
 }
 
 function buildShareText() {
-  const modePrefix = difficulty === 'hard' ? '[困难模式] ' : '';
+  const modePrefix = difficulty === 'hard'
+    ? '[困难模式] '
+    : (difficulty === 'easy' ? '[简单模式] ' : '');
   let statusLine = `🐍 贪吃蛇·肉鸽挑战｜${modePrefix}闯关至 Lv.${level}`;
   if (state === 'won') {
     statusLine = `🐍 贪吃蛇·肉鸽挑战｜${modePrefix}恭喜通关！(Lv.${level})`;
@@ -1091,12 +1218,12 @@ function endGame(won = false) {
 
   if (endlessMode && level > bestEndlessLevel) {
     bestEndlessLevel = level;
-    saveBestEndlessLevel(bestEndlessLevel);
+    saveBestEndlessLevel(bestEndlessLevel, difficulty);
   }
 
   if (score > bestScore) {
     bestScore = score;
-    saveBestScore(bestScore);
+    saveBestScore(bestScore, difficulty);
   }
   updateHUD();
 
@@ -1105,12 +1232,15 @@ function endGame(won = false) {
 
   const modeLabel = getDifficultyCfg().label;
   if (won) {
-    const title = difficulty === 'hard' ? '🔥 困难模式通关！' : '恭喜通关！';
+    const title = difficulty === 'hard'
+      ? '🔥 困难模式通关！'
+      : (difficulty === 'easy' ? '🌿 简单模式通关！' : '恭喜通关！');
     const desc = level >= CLEAR_LEVEL
       ? `${modeLabel}突破全部 ${CLEAR_LEVEL} 关！本局得分 ${score} · 最高纪录 ${bestScore}，可继续无尽模式挑战极限！`
       : `${modeLabel}占领全部棋盘格！本局得分 ${score} · 最高纪录 ${bestScore}`;
     showOverlay(title, desc, '再来一局', {
       showTips: false,
+      showPauseUpgrades: false,
       showSummary: true,
       showEndless: !endlessMode,
       showMode: true
@@ -1121,6 +1251,7 @@ function endGame(won = false) {
       : `${modeLabel} · 闯至 Lv.${level} · 本局得分 ${score} · 最高纪录 ${bestScore}`;
     showOverlay('游戏结束', desc, '再来一局', {
       showTips: false,
+      showPauseUpgrades: false,
       showSummary: true,
       showEndless: false,
       showMode: true
@@ -1128,12 +1259,13 @@ function endGame(won = false) {
   }
 }
 
-function showOverlay(title, desc, btnText, { showTips = false, showSummary = false, showEndless = false, showMode = false } = {}) {
+function showOverlay(title, desc, btnText, { showTips = false, showPauseUpgrades = false, showSummary = false, showEndless = false, showMode = false } = {}) {
   overlayTitleEl.textContent = title;
   overlayDescEl.textContent = desc;
   startBtn.textContent = btnText;
   if (modeSelectorEl) modeSelectorEl.classList.toggle('hidden', !showMode);
   overlayTipsEl.classList.toggle('hidden', !showTips);
+  if (pauseUpgradesEl) pauseUpgradesEl.classList.toggle('hidden', !showPauseUpgrades);
   runSummaryEl.classList.toggle('hidden', !showSummary);
   endlessBtn.classList.toggle('hidden', !showEndless);
   shareBtn.classList.toggle('hidden', !showSummary);
@@ -1188,6 +1320,9 @@ function renderBuffBar() {
   }
   if (nirvanaCharges > 0) {
     pills.push('<span class="buff-pill" style="border-color: hsl(28, 96%, 56%); color: hsl(32, 100%, 78%);">涅槃待命</span>');
+  }
+  if (hasStarfallResonance) {
+    pills.push('<span class="buff-pill" style="border-color: hsl(42, 98%, 56%); color: hsl(44, 100%, 78%);">✦ 星陨共鸣</span>');
   }
   if (invulnTimer > 0) {
     pills.push(`<span class="buff-pill" style="border-color: hsl(345, 86%, 56%); color: hsl(345, 95%, 76%);">无敌 ${invulnTimer.toFixed(1)}s</span>`);
@@ -1368,7 +1503,8 @@ function spawnPowerUp() {
   }
 
   const pos = cells[Math.floor(Math.random() * cells.length)];
-  const itemTtl = 9.5 + buffBonusSec;
+  const rawTtl = 9.5 + buffBonusSec;
+  const itemTtl = activeMutator === 'swift_loot' ? +(rawTtl * 0.65).toFixed(1) : rawTtl;
 
   lastPowerUpType = pickedType;
   powerUp = {
@@ -1434,7 +1570,8 @@ function calcDoublePts(pts) {
 function registerComboBonus() {
   if (comboUpgradeLevel <= 0) return 0;
   comboCount = Math.min(MAX_COMBO_COUNT, comboCount + 1);
-  comboTimer = COMBO_WINDOW + (comboUpgradeLevel > 1 ? 1.0 : 0);
+  const overdriveBonus = activeMutator === 'overdrive' ? 2.0 : 0;
+  comboTimer = COMBO_WINDOW + (comboUpgradeLevel > 1 ? 1.0 : 0) + overdriveBonus;
   renderBuffBar();
   const base = comboCount >= 2 ? (comboCount - 1) * (4 * comboUpgradeLevel) : 0;
   return hasBerserkRush ? base * 2 : base;
@@ -1445,6 +1582,7 @@ function applyPowerUp(item) {
   triggerHaptic(18);
   let triggerChestModal = false;
   const treasureBonus = 8 * treasureSenseLevel;
+  const starFruitMult = hasStarfallResonance ? 1.3 : 1;
 
   if (item.type === 'heart') {
     playTone('heal');
@@ -1455,7 +1593,7 @@ function applyPowerUp(item) {
   } else if (item.type === 'gold') {
     playTone('powerup');
     const comboBonus = registerComboBonus();
-    const pts = calcDoublePts(Math.round(30 * scoreMultiplier) + comboBonus + treasureBonus);
+    const pts = calcDoublePts(Math.round(30 * scoreMultiplier * starFruitMult) + comboBonus + treasureBonus);
     score += pts;
     pendingGrowth += 2;
     spawnBurst(item.x, item.y, '43, 96%, 58%', 14);
@@ -1520,6 +1658,18 @@ function applyPowerUp(item) {
     triggerChestModal = true;
     spawnBurst(item.x, item.y, '32, 98%, 60%', 18);
     addFloatingText(item.x, item.y, '🎁 开启神秘宝箱!', 'hsl(34, 100%, 74%)');
+  }
+
+  // 传说卡「星陨共鸣」：拾取任意场上道具时自动震碎周围 5×5 岩石并计分
+  if (hasStarfallResonance && snake.length > 0) {
+    const starCleared = clearObstaclesNear(snake[0].x, snake[0].y, 2);
+    if (starCleared > 0) {
+      const starPts = calcDoublePts(starCleared * getRockSmashBasePts());
+      score += starPts;
+      shakeTimer = Math.max(shakeTimer, 0.14);
+      spawnBurst(snake[0].x, snake[0].y, '42, 100%, 66%', 14);
+      addFloatingText(snake[0].x, snake[0].y, `✦ 星陨碎${starCleared}石 +${starPts}`, 'hsl(42, 100%, 74%)');
+    }
   }
 
   recalcBaseInterval();
@@ -1676,8 +1826,10 @@ function stepGame() {
 
   if (willEatFood) {
     const comboBonus = registerComboBonus();
-    const baseFoodPts = getFoodBasePoints(level) + (activeMutator === 'moving_food' ? 6 : 0);
-    const pts = calcDoublePts(Math.round(baseFoodPts * scoreMultiplier) + comboBonus);
+    const mutFoodBonus = (activeMutator === 'moving_food' || activeMutator === 'overdrive') ? 6 : 0;
+    const baseFoodPts = getFoodBasePoints(level) + mutFoodBonus;
+    const starFruitMult = hasStarfallResonance ? 1.3 : 1;
+    const pts = calcDoublePts(Math.round(baseFoodPts * scoreMultiplier * starFruitMult) + comboBonus);
     score += pts;
     if (extraFoodGrowth > 0) {
       pendingGrowth += extraFoodGrowth;
@@ -1888,6 +2040,9 @@ window.addEventListener('keydown', (e) => {
     if (e.code in UPGRADE_KEY_MAP) {
       e.preventDefault();
       selectUpgrade(UPGRADE_KEY_MAP[e.code]);
+    } else if (e.code === 'KeyR') {
+      e.preventDefault();
+      rerollUpgradeChoices();
     }
     return;
   }
@@ -1933,6 +2088,8 @@ startBtn.addEventListener('click', () => {
   }
 });
 
+if (upgradeRerollBtn) upgradeRerollBtn.addEventListener('click', rerollUpgradeChoices);
+if (modeEasyBtn) modeEasyBtn.addEventListener('click', () => setDifficulty('easy'));
 if (modeStandardBtn) modeStandardBtn.addEventListener('click', () => setDifficulty('standard'));
 if (modeHardBtn) modeHardBtn.addEventListener('click', () => setDifficulty('hard'));
 endlessBtn.addEventListener('click', continueEndlessMode);

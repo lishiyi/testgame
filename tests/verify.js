@@ -197,6 +197,7 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     getScoreForLevel,
     getLevelForScore,
     getFoodBasePoints,
+    loadBestScore,
     loadBestEndlessLevel,
     loadHardClearCount,
     setDifficulty,
@@ -216,21 +217,26 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     triggerTimedRockDrop,
     startGame,
     continueEndlessMode,
+    pauseGame,
+    togglePause,
     stepGame,
     updateTimers,
     updateHUD,
     renderRockDripChip,
     checkLevelUp,
     openNextUpgradeChoice,
+    rerollUpgradeChoices,
     selectUpgrade,
     copyShareStats,
     gameLoop,
     renderScene,
     getSnapshot: () => JSON.parse(JSON.stringify({
-      state, difficulty, hardClearCount, level, endlessMode, activeMutator, bestEndlessLevel, score, lives, maxLives, scoreMultiplier, buffBonusSec, slowUpgradeCount, baseStepInterval,
+      state, difficulty, hardClearCount, level, endlessMode, activeMutator, bestScore, bestEndlessLevel, score, lives, maxLives, scoreMultiplier, buffBonusSec, slowUpgradeCount, baseStepInterval,
       snake, pendingGrowth, obstacles, food, powerUp, lastPowerUpType, invulnTimer, doubleTimer, shieldTimer, ghostTimer, freezeTimer,
       comboCount, comboTimer, hasPhaseBody, phaseBodyCooldown, hasLevelFreeze,
-      nirvanaCharges, nirvanaUsed, shakeTimer, hitstopTimer,
+      nirvanaCharges, nirvanaUsed, hasStarfallResonance, rerollsLeft,
+      currentChoiceIds: currentChoices.map((c) => c.id),
+      shakeTimer, hitstopTimer,
       rocksSmashed, runElapsedSec, pickedUpgrades, pendingUpgradeLevels,
       blastExpertLevel, hasStoneFeast, stoneFeastProgress,
       hasGreedyMaw, extraFoodGrowth, hasBerserkRush,
@@ -265,8 +271,11 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
       if (patch.hasGreedyMaw !== undefined) hasGreedyMaw = patch.hasGreedyMaw;
       if (patch.extraFoodGrowth !== undefined) extraFoodGrowth = patch.extraFoodGrowth;
       if (patch.hasBerserkRush !== undefined) hasBerserkRush = patch.hasBerserkRush;
+      if (patch.hasStarfallResonance !== undefined) hasStarfallResonance = patch.hasStarfallResonance;
       if (patch.treasureSenseLevel !== undefined) treasureSenseLevel = patch.treasureSenseLevel;
       if (patch.emergencyArmorLevel !== undefined) emergencyArmorLevel = patch.emergencyArmorLevel;
+      if (patch.rerollsLeft !== undefined) rerollsLeft = patch.rerollsLeft;
+      if (patch.pendingUpgradeLevels !== undefined) pendingUpgradeLevels = patch.pendingUpgradeLevels.slice();
       if (patch.comboUpgradeLevel !== undefined) comboUpgradeLevel = patch.comboUpgradeLevel;
       if (patch.comboCount !== undefined) comboCount = patch.comboCount;
       if (patch.comboTimer !== undefined) comboTimer = patch.comboTimer;
@@ -463,8 +472,8 @@ for (let i = 0; i < 100; i++) {
   prevType = spawnedType;
 }
 
-// 6. 校验 18 张强化词条池（8 普 / 5 罕 / 4 稀 / 1 传，含 2 张双刃卡）、传说稀有度权重（稀有的一半）及核心数值
-assert.strictEqual(g.UPGRADE_POOL.length, 18, '词条池应扩展为 18 项（8 普 / 5 罕 / 4 稀 / 1 传）');
+// 6. 校验 19 张强化词条池（8 普 / 5 罕 / 4 稀 / 2 传，含 2 张双刃卡）、传说稀有度权重（稀有的一半）及核心数值
+assert.strictEqual(g.UPGRADE_POOL.length, 19, '词条池应扩展为 19 项（8 普 / 5 罕 / 4 稀 / 2 传）');
 assert.strictEqual(g.RARITY_CONFIG.legendary.weight * 2, g.RARITY_CONFIG.rare.weight, '传说稀有度单卡权重应为稀有的一半');
 assert(
   g.RARITY_CONFIG.legendary.weight < g.RARITY_CONFIG.rare.weight &&
@@ -477,7 +486,7 @@ assert(
 g.startGame();
 g.setTestState({ snake: Array.from({ length: 8 }, (_, i) => ({ x: 10 - i, y: 10 })) });
 const pickCounts = { common: 0, uncommon: 0, rare: 0, legendary: 0 };
-const cardPoolCounts = { common: 8, uncommon: 5, rare: 4, legendary: 1 };
+const cardPoolCounts = { common: 8, uncommon: 5, rare: 4, legendary: 2 };
 for (let i = 0; i < 6000; i++) {
   for (const c of g.pickWeightedUpgrades(3)) {
     pickCounts[c.rarity]++;
@@ -1278,7 +1287,141 @@ assert(env.getEl('mode-hard-btn').textContent.includes('🏅'), '困难通关后
   assert.strictEqual(g.getSnapshot().lives, 3, '切回标准模式后应恢复 3 点生命');
   assert.strictEqual(env.getEl('mode-badge').classList.contains('hidden'), true, '切回标准模式后应隐藏困难徽章');
 
+  // 13. 校验简单模式与分难度最高纪录、三选一重随、星陨共鸣传说卡、5 词缀扩展与暂停强化查看
+  // 13a. 简单模式属性与主线无词缀、分难度独立最高分纪录
+  g.setDifficulty('standard');
+  const stdBestBefore = g.loadBestScore('standard');
+  assert(stdBestBefore >= g.getScoreForLevel(20), '前置标准模式纪录应已存在');
+  assert.strictEqual(g.getSnapshot().bestScore, stdBestBefore, '标准模式应读取标准最高分');
+
+  g.setDifficulty('easy');
+  assert.strictEqual(g.getSnapshot().bestScore, 0, '切换到简单模式时最高分应独立读取为 0');
+  g.startGame();
+  snap = g.getSnapshot();
+  assert.strictEqual(snap.difficulty, 'easy');
+  assert.strictEqual(snap.lives, 4, '简单模式初始生命应为 4');
+  assert.strictEqual(snap.maxLives, 4, '简单模式初始生命上限应为 4');
+  assert.strictEqual(snap.baseStepInterval, Math.round(140 / 0.92), '简单模式 Lv.1 基础速度应为 0.92x');
+  assert.strictEqual(g.getEffectiveRockDripInterval(3), 16.2, '简单模式 Lv.3 落石间隔应放缓至 16.2s');
+  assert.strictEqual(env.getEl('mode-badge').classList.contains('hidden'), false, '简单模式顶部应显示简单徽章');
+  assert(env.getEl('mode-badge').textContent.includes('简单'));
+
+  // 简单模式升至 Lv.19 主线全程不激活场地词缀，落石预警为 2.8s
+  g.setTestState({ score: g.getScoreForLevel(19) });
+  g.checkLevelUp();
+  snap = g.getSnapshot();
+  assert.strictEqual(snap.level, 19);
+  assert.strictEqual(snap.activeMutator, null, '简单模式主线 Lv.1~19 不应激活场地词缀');
+  const easyWarnRock = snap.obstacles.find((o) => o.warnTimer > 0);
+  assert.strictEqual(easyWarnRock.warnTimer, 2.8, '简单模式落石预警应为 2.8s');
+
+  // 简单模式通关 Lv.20 记录独立最高分（高于标准模式），不应覆盖标准/困难模式纪录，进无尽后开启词缀
+  const easyHighScore = stdBestBefore + 500;
+  g.setTestState({ score: easyHighScore });
+  g.checkLevelUp();
+  assert.strictEqual(g.getSnapshot().state, 'won');
+  assert.strictEqual(g.loadBestScore('easy'), easyHighScore, '简单模式最高分应独立保存');
+  assert.strictEqual(g.loadBestScore('standard'), stdBestBefore, '简单模式高分不应覆盖标准模式最高分');
+  assert.strictEqual(g.loadBestScore('hard'), g.getScoreForLevel(20), '困难模式最高分也应独立保存');
+  await g.copyShareStats();
+  assert(env.getClipboardText().includes('[简单模式]'), '简单模式分享文本应带 [简单模式] 标识');
+  g.continueEndlessMode();
+  assert(g.getSnapshot().activeMutator && g.ENDLESS_MUTATORS[g.getSnapshot().activeMutator], '简单模式进入无尽后应激活场地词缀');
+  assert.strictEqual(g.loadBestEndlessLevel('easy'), 20, '简单模式无尽最高关应独立保存');
+
+  // 13b. 三选一每局 1 次重随（避开当前 3 张，用完后不可再重随）
+  g.setDifficulty('standard');
+  g.startGame();
+  assert.strictEqual(g.getSnapshot().rerollsLeft, 1, '开局默认拥有 1 次重随机会');
+  g.setTestState({ pendingUpgradeLevels: [3] });
+  g.openNextUpgradeChoice();
+  const beforeRerollIds = g.getSnapshot().currentChoiceIds;
+  assert.strictEqual(beforeRerollIds.length, 3);
+  assert.strictEqual(env.getEl('upgrade-reroll-btn').disabled, false, '有重随次数时按钮应可点击');
+  assert.strictEqual(g.rerollUpgradeChoices(), true, '首次重随应成功');
+  const afterRerollIds = g.getSnapshot().currentChoiceIds;
+  assert.strictEqual(afterRerollIds.length, 3);
+  assert(afterRerollIds.every((id) => !beforeRerollIds.includes(id)), '重随后 3 张卡应避开上一批卡片');
+  assert.strictEqual(g.getSnapshot().rerollsLeft, 0, '重随后剩余次数归零');
+  assert.strictEqual(env.getEl('upgrade-reroll-btn').disabled, true, '次数用尽后重随按钮应禁用');
+  assert.strictEqual(g.rerollUpgradeChoices(), false, '次数用尽后再次重随应被拒绝');
+
+  // 13c. 暂停界面查看本局已选强化（选卡后自动暂停显示已选强化，合并叠加计数，继续游戏后隐藏）
+  g.selectUpgrade(0);
+  assert.strictEqual(g.getSnapshot().state, 'paused');
+  assert.strictEqual(env.getEl('pause-upgrades').classList.contains('hidden'), false, '暂停界面应展示本局已选强化面板');
+  assert(env.getEl('pause-upgrades').innerHTML.includes('本局已选强化'), '暂停面板应显示标题');
+  assert(env.getEl('pause-upgrades').innerHTML.includes('重随 0/1'), '暂停面板应显示剩余重随次数');
+  g.togglePause();
+  assert.strictEqual(g.getSnapshot().state, 'running');
+  assert.strictEqual(env.getEl('pause-upgrades').classList.contains('hidden'), true, '继续游戏后应隐藏暂停强化面板');
+
+  // 13d. 第 2 张传说卡「星陨共鸣」(starfall_resonance)
+  const starCard = g.UPGRADE_POOL.find((u) => u.id === 'starfall_resonance');
+  assert(starCard && starCard.rarity === 'legendary', '星陨共鸣应为传说卡');
+  g.startGame();
+  starCard.apply();
+  assert.strictEqual(starCard.canPick(), false, '星陨共鸣不可重复抽取');
+  // 果实 +30%（Lv.1 苹果 10 * 1.3 = 13，金果 30 * 1.3 = 39）
+  g.setTestState({
+    snake: [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }],
+    direction: { x: 1, y: 0 },
+    food: { x: 11, y: 10 },
+    obstacles: [],
+    powerUp: null,
+    score: 0
+  });
+  g.stepGame();
+  assert.strictEqual(g.getSnapshot().score, 13, '星陨共鸣下 Lv.1 吃苹果应得 13 分（+30%）');
+  // 拾取任意道具震碎周围 5×5 岩石并按 7 分/块（5*1.3=6.5->7）计分
+  g.setTestState({
+    snake: [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }],
+    obstacles: [
+      { x: 12, y: 12, warnTimer: 0 }, // 5x5 内
+      { x: 8, y: 9, warnTimer: 0 },   // 5x5 内
+      { x: 0, y: 0, warnTimer: 0 }    // 5x5 外
+    ],
+    score: 0,
+    doubleTimer: 0
+  });
+  g.applyPowerUp({ x: 10, y: 10, type: 'gold' }); // 金果 39 + 星陨碎 2 石 (2*7=14) = 53
+  snap = g.getSnapshot();
+  assert.strictEqual(snap.obstacles.length, 1, '星陨共鸣拾取道具应震碎周围 5×5 内全部岩石');
+  assert.strictEqual(snap.score, 39 + 14, '星陨共鸣金果 +30% 与碎石 +30% 合计应为 53 分');
+  assert(env.getEl('buff-bar').innerHTML.includes('星陨共鸣'), '状态栏应展示星陨共鸣徽章');
+
+  // 13e. 扩充 5 种场地词缀（新增 swift_loot 疾速秘宝 & overdrive 狂飙时刻）
+  assert.strictEqual(Object.keys(g.ENDLESS_MUTATORS).length, 5, '场地词缀应扩充为 5 种');
+  g.startGame();
+  const baseCd = g.getPowerUpCooldown();
+  g.rollEndlessMutator('swift_loot');
+  assert.strictEqual(g.getPowerUpCooldown(), +(baseCd * 0.65).toFixed(2), '疾速秘宝应使道具刷新间隔缩短 35%');
+  g.setTestState({ buffBonusSec: 0, powerUp: null });
+  g.spawnPowerUp();
+  assert.strictEqual(g.getSnapshot().powerUp.maxTtl, +(9.5 * 0.65).toFixed(1), '疾速秘宝应使道具停留时间缩短 35%');
+
+  g.startGame();
+  const baseMsNormal = g.getSnapshot().baseStepInterval;
+  g.rollEndlessMutator('overdrive');
+  assert(g.getSnapshot().baseStepInterval < baseMsNormal, '狂飙时刻应加快 12% 移速');
+  assert.strictEqual(g.getSnapshot().baseStepInterval, Math.round(140 / 1.12));
+  g.setTestState({
+    snake: [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }],
+    direction: { x: 1, y: 0 },
+    food: { x: 11, y: 10 },
+    obstacles: [],
+    powerUp: null,
+    score: 0,
+    comboUpgradeLevel: 1,
+    comboCount: 0,
+    comboTimer: 0
+  });
+  g.stepGame(); // 狂飙时刻：吃苹果基础分 10+6=16，连击窗口 5+2=7s
+  snap = g.getSnapshot();
+  assert.strictEqual(snap.score, 16, '狂飙时刻吃苹果基础分应 +6（10+6=16）');
+  assert.strictEqual(snap.comboTimer, 7.0, '狂飙时刻连击窗口应延长 +2s 至 7.0s');
+
   g.gameLoop(1500);
   assert.strictEqual(env.getSaveDepth(), 0, 'Canvas save/restore 深度必须归零');
-  console.log('✓ 全部仓库模块自动化回归测试通过！（60/90/130/160阶梯门槛 + 主线高关词缀 + 双刃强化卡 + 标准/困难模式切换）');
+  console.log('✓ 全部仓库模块自动化回归测试通过！（简单/标准/困难分难度纪录 + 重随 + 星陨共鸣双传说 + 5 词缀 + 暂停看强化）');
 })();

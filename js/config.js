@@ -25,14 +25,28 @@ const PHASE_BODY_DURATION = 2.0;    // 「相位穿身」触发时自动获得�
 const COMBO_WINDOW = 5.0;           // 「连击」连续吃果有效时间窗口 (秒)
 const MAX_COMBO_COUNT = 5;          // 「连击」最高叠加层数上限
 const BERSERK_SPEED_BONUS = 0.15;   // 双刃卡「极速猎手」永久速度倍率加成
+const INITIAL_REROLLS = 1;          // 每局三选一免费重随次数
 const SHAKE_DURATION = 0.22;        // 受击屏幕震动持续时间 (秒)
 const HITSTOP_DURATION = 0.045;     // 拾取道具瞬间微顿帧时长 (秒)
 const STORAGE_KEY = 'classic_snake_best_score_v2';
 const ENDLESS_LEVEL_STORAGE_KEY = 'classic_snake_best_endless_lv_v1';
 const HARD_CLEAR_STORAGE_KEY = 'classic_snake_hard_clears_v1';
 
-// 开局难度模式配置（标准 / 困难）
+// 开局难度模式配置（简单 / 标准 / 困难；默认标准模式）
 const DIFFICULTY_CONFIG = {
+  easy: {
+    id: 'easy',
+    label: '简单模式',
+    shortLabel: '简单',
+    initialLives: 4,
+    hardMaxLives: 7,
+    initialSpeedMult: 0.92,
+    speedGainMult: 0.75,
+    warnDuration: 2.8,
+    rockDripMult: 1.35,
+    mutatorStartLevel: 20,
+    summary: '4 命 · 移速更缓 · 预警 2.8s · 主线无词缀'
+  },
   standard: {
     id: 'standard',
     label: '标准模式',
@@ -181,7 +195,7 @@ function getFoodBasePoints(lv) {
   return Math.min(24, 10 + tier * 2);
 }
 
-// 主线高关卡与无尽模式共用的场地变化词缀（标准 Lv.15 / 困难 Lv.10 激活，每 5 关轮换）
+// 主线高关卡与无尽模式共用的场地变化词缀（共 5 种；标准 Lv.15 / 困难 Lv.10 / 简单无尽 Lv.20 激活，每 5 关轮换）
 const ENDLESS_MUTATORS = {
   moving_food: {
     id: 'moving_food',
@@ -197,6 +211,16 @@ const ENDLESS_MUTATORS = {
     id: 'fragile_aegis',
     name: '碎石狂潮',
     desc: '拾取护盾道具时长减半，所有碎石基础得分 ×2'
+  },
+  swift_loot: {
+    id: 'swift_loot',
+    name: '疾速秘宝',
+    desc: '道具刷新加快 35%，但场上停留时间缩短 35%'
+  },
+  overdrive: {
+    id: 'overdrive',
+    name: '狂飙时刻',
+    desc: '移动速度加快 12%，连击维持窗口 +2s 且吃苹果基础分 +6'
   }
 };
 
@@ -254,36 +278,45 @@ function formatDuration(seconds) {
   return `${total}秒`;
 }
 
-// 本地最高分、无尽最高关卡与困难通关次数存取
-function loadBestScore() {
+// 按难度生成独立存储键（标准模式沿用原键，兼容已有历史纪录）
+function getBestScoreStorageKey(mode = 'standard') {
+  return mode === 'standard' ? STORAGE_KEY : `${STORAGE_KEY}_${mode}`;
+}
+
+function getBestEndlessStorageKey(mode = 'standard') {
+  return mode === 'standard' ? ENDLESS_LEVEL_STORAGE_KEY : `${ENDLESS_LEVEL_STORAGE_KEY}_${mode}`;
+}
+
+// 本地最高分、无尽最高关卡与困难通关次数存取（按难度独立统计）
+function loadBestScore(mode = 'standard') {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = localStorage.getItem(getBestScoreStorageKey(mode));
     return saved ? Math.max(0, parseInt(saved, 10) || 0) : 0;
   } catch {
     return 0;
   }
 }
 
-function saveBestScore(value) {
+function saveBestScore(value, mode = 'standard') {
   try {
-    localStorage.setItem(STORAGE_KEY, String(value));
+    localStorage.setItem(getBestScoreStorageKey(mode), String(value));
   } catch {
     // 忽略存储异常
   }
 }
 
-function loadBestEndlessLevel() {
+function loadBestEndlessLevel(mode = 'standard') {
   try {
-    const saved = localStorage.getItem(ENDLESS_LEVEL_STORAGE_KEY);
+    const saved = localStorage.getItem(getBestEndlessStorageKey(mode));
     return saved ? Math.max(0, parseInt(saved, 10) || 0) : 0;
   } catch {
     return 0;
   }
 }
 
-function saveBestEndlessLevel(value) {
+function saveBestEndlessLevel(value, mode = 'standard') {
   try {
-    localStorage.setItem(ENDLESS_LEVEL_STORAGE_KEY, String(value));
+    localStorage.setItem(getBestEndlessStorageKey(mode), String(value));
   } catch {
     // 忽略存储异常
   }

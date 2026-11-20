@@ -101,6 +101,12 @@ body {
   line-height: 1.25;
 }
 
+.mode-badge.easy {
+  color: hsl(172, 92%, 78%);
+  background-color: hsla(172, 54%, 18%, 0.72);
+  border-color: hsla(172, 76%, 50%, 0.62);
+}
+
 .mode-badge.hidden {
   display: none;
 }
@@ -654,6 +660,47 @@ body {
   line-height: 1.35;
 }
 
+.upgrade-footer {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.reroll-btn {
+  appearance: none;
+  border: 1px solid hsla(43, 86%, 54%, 0.6);
+  border-radius: 6px;
+  background-color: hsla(42, 42%, 14%, 0.85);
+  color: hsl(45, 98%, 74%);
+  padding: 5px 11px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-key);
+  transition: background-color 0.14s ease, border-color 0.14s ease, transform 0.08s ease;
+}
+
+.reroll-btn:hover:not(:disabled) {
+  background-color: hsla(42, 48%, 20%, 0.95);
+  border-color: hsl(44, 96%, 62%);
+}
+
+.reroll-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.reroll-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: var(--border-subtle);
+  background-color: var(--bg-surface);
+  color: var(--text-muted);
+  box-shadow: none;
+}
+
 .upgrade-hint {
   font-size: 0.75rem;
   color: var(--text-muted);
@@ -719,8 +766,8 @@ body {
   border-radius: 6px;
   background-color: transparent;
   color: var(--text-secondary);
-  padding: 4px 13px;
-  font-size: 0.78rem;
+  padding: 4px 11px;
+  font-size: 0.76rem;
   font-weight: 700;
   cursor: pointer;
   transition: background-color 0.14s ease, color 0.14s ease, border-color 0.14s ease;
@@ -728,6 +775,12 @@ body {
 
 .mode-btn:hover {
   color: var(--text-primary);
+}
+
+.mode-btn.active[data-mode="easy"] {
+  background-color: hsla(172, 56%, 24%, 0.42);
+  border-color: hsla(172, 76%, 50%, 0.65);
+  color: hsl(172, 92%, 76%);
 }
 
 .mode-btn.active[data-mode="standard"] {
@@ -746,6 +799,10 @@ body {
   font-size: 0.72rem;
   color: var(--text-secondary);
   line-height: 1.35;
+}
+
+.mode-desc.easy {
+  color: hsl(172, 84%, 74%);
 }
 
 .mode-desc.hard {
@@ -916,8 +973,42 @@ body {
   flex-wrap: wrap;
 }
 
+.pause-upgrades {
+  width: 100%;
+  max-width: 356px;
+  background-color: hsla(150, 10%, 14%, 0.92);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pause-upgrades-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 4px;
+}
+
+.pause-upgrades-header strong {
+  color: var(--text-primary);
+}
+
+.pause-upgrades-meta {
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-gold);
+  font-weight: 600;
+}
+
 .mode-selector.hidden,
 .overlay-tips.hidden,
+.pause-upgrades.hidden,
 .run-summary.hidden,
 .secondary-btn.hidden,
 .endless-btn.hidden {

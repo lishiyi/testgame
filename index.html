@@ -74,7 +74,10 @@
           <h2 id="upgrade-title" class="upgrade-title">选择一项能力强化</h2>
         </div>
         <div id="upgrade-list" class="upgrade-list"></div>
-        <p class="upgrade-hint">点击卡片或按数字键 <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> 立即生效</p>
+        <div class="upgrade-footer">
+          <button id="upgrade-reroll-btn" class="reroll-btn" type="button">🎲 换一批 (剩余 1 次)</button>
+          <p class="upgrade-hint">按 <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 选择 · <kbd>R</kbd> 重随</p>
+        </div>
       </div>
 
       <!-- 开始 / 暂停 / 结束遮罩 -->
@@ -82,9 +85,10 @@
         <h2 id="overlay-title" class="overlay-title">准备出发</h2>
         <p id="overlay-desc" class="overlay-desc">挑战全部 20 关！每逢 3 关三选一强化，后期将激活阶段场地词缀。</p>
 
-        <!-- 标准 / 困难开局模式切换 -->
+        <!-- 简单 / 标准 / 困难开局模式切换（默认标准） -->
         <div id="mode-selector" class="mode-selector" role="group" aria-label="难度模式选择">
           <div class="mode-toggle">
+            <button id="mode-easy-btn" class="mode-btn" type="button" data-mode="easy">简单模式</button>
             <button id="mode-standard-btn" class="mode-btn active" type="button" data-mode="standard">标准模式</button>
             <button id="mode-hard-btn" class="mode-btn" type="button" data-mode="hard">困难模式</button>
           </div>
@@ -94,9 +98,12 @@
         <!-- 首次开局核心机制速览 -->
         <div id="overlay-tips" class="overlay-tips">
           <div class="tip-row"><span class="tip-icon lives">♥</span><span>撞墙停在原地扣 1 命并短暂无敌；撞碎石扣 1 命并撞碎该石，开盾可主动撞石连击</span></div>
-          <div class="tip-row"><span class="tip-icon warn">!</span><span>Lv.3 起定时落石（满额移石）；高关卡提前激活场地词缀，带来阶段 Boss 压迫感</span></div>
-          <div class="tip-row"><span class="tip-icon rare">✦</span><span>每 3 关三选一（含高风险双刃卡），选完自动暂停方便观察走位</span></div>
+          <div class="tip-row"><span class="tip-icon warn">!</span><span>Lv.3 起定时落石（满额移石）；标准 Lv.15 / 困难 Lv.10 提前激活场地词缀</span></div>
+          <div class="tip-row"><span class="tip-icon rare">✦</span><span>每 3 关三选一（每局可免费重随 1 次），选完自动暂停方便观察走位</span></div>
         </div>
+
+        <!-- 暂停界面本局已选强化查看面板 -->
+        <div id="pause-upgrades" class="pause-upgrades hidden" aria-label="本局已选强化"></div>
 
         <!-- 结算战绩统计面板 -->
         <div id="run-summary" class="run-summary hidden" aria-live="polite"></div>
@@ -112,7 +119,7 @@
     <footer class="controls-section">
       <div class="keyboard-hints">
         <span><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> 或 <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> 转向</span>
-        <span><kbd>Space</kbd> 暂停 / 继续 · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 选强化</span>
+        <span><kbd>Space</kbd> 暂停 / 继续 · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 选强化 · <kbd>R</kbd> 重随</span>
       </div>
 
       <div class="dpad" role="group" aria-label="方向控制键">
