@@ -29,13 +29,36 @@ function drawBoard(timestamp) {
     }
   }
 
-  // 时停冻结光效边框
+  // 时停冻结光效边框（最后 1.2s 闪烁预警）
   if (freezeTimer > 0) {
+    const freezeAlpha = freezeTimer < 1.2 ? (Math.sin(timestamp * 0.03) > 0 ? 0.85 : 0.2) : 0.72;
     ctx.save();
-    ctx.strokeStyle = 'hsla(202, 96%, 68%, 0.72)';
+    ctx.strokeStyle = `hsla(202, 96%, 68%, ${freezeAlpha})`;
     ctx.lineWidth = 3;
     ctx.setLineDash([4, 4]);
     ctx.strokeRect(2.5, 2.5, BASE_SIZE - 5, BASE_SIZE - 5);
+    ctx.restore();
+  }
+
+  // 寒冰减速边框反馈（最后 1.5s 闪烁预警即将恢复原速）
+  if (iceTimer > 0 && freezeTimer <= 0) {
+    const iceAlpha = iceTimer < 1.5 ? (Math.sin(timestamp * 0.028) > 0 ? 0.78 : 0.18) : 0.42;
+    ctx.save();
+    ctx.strokeStyle = `hsla(196, 92%, 64%, ${iceAlpha})`;
+    ctx.lineWidth = 2.4;
+    ctx.setLineDash([6, 6]);
+    ctx.strokeRect(2, 2, BASE_SIZE - 4, BASE_SIZE - 4);
+    ctx.restore();
+  }
+
+  // 幽灵相位边框反馈（最后 1.0s 快速闪烁预警即将恢复自身碰撞）
+  if (ghostTimer > 0) {
+    const ghostAlpha = ghostTimer < 1.0 ? (Math.sin(timestamp * 0.038) > 0 ? 0.86 : 0.16) : 0.48;
+    ctx.save();
+    ctx.strokeStyle = `hsla(258, 92%, 76%, ${ghostAlpha})`;
+    ctx.lineWidth = 2.2;
+    ctx.setLineDash([5, 5]);
+    ctx.strokeRect(4.5, 4.5, BASE_SIZE - 9, BASE_SIZE - 9);
     ctx.restore();
   }
 
@@ -328,7 +351,11 @@ function drawSnakeEyes(head) {
 function drawSnake(timestamp) {
   const total = snake.length;
   const isPhase = (hasPhaseBody && phaseBodyCooldown <= 0) || ghostTimer > 0;
-  const hue = iceTimer > 0 ? 178 : (ghostTimer > 0 ? 256 : 152);
+  const iceExpiringBlink = iceTimer > 0 && iceTimer < 1.5 && Math.sin(timestamp * 0.028) < 0;
+  const ghostExpiringBlink = ghostTimer > 0 && ghostTimer < 1.0 && Math.sin(timestamp * 0.038) < 0;
+  const hue = (iceTimer > 0 && !iceExpiringBlink)
+    ? 178
+    : ((ghostTimer > 0 && !ghostExpiringBlink) ? 256 : 152);
   const invulnFlash = invulnTimer > 0 && Math.sin(timestamp * 0.03) < 0;
 
   if (magnetLevel > 0 && snake.length > 0) {
@@ -341,6 +368,14 @@ function drawSnake(timestamp) {
     ctx.beginPath();
     ctx.arc(hx, hy, CELL_SIZE * 1.45, 0, Math.PI * 2);
     ctx.stroke();
+    if (magnetLevel >= 2) {
+      ctx.strokeStyle = 'hsla(43, 96%, 64%, 0.24)';
+      ctx.lineWidth = 1.1;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.arc(hx, hy, CELL_SIZE * 2.35, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -348,7 +383,7 @@ function drawSnake(timestamp) {
   if (invulnFlash) {
     ctx.globalAlpha = 0.42;
   } else if (ghostTimer > 0) {
-    ctx.globalAlpha = 0.78;
+    ctx.globalAlpha = ghostExpiringBlink ? 0.96 : 0.72;
   }
 
   for (let i = total - 1; i >= 0; i--) {
@@ -382,7 +417,7 @@ function drawSnake(timestamp) {
         ctx.roundRect(seg.x * CELL_SIZE + pad, seg.y * CELL_SIZE + pad, size, size, radius);
         ctx.stroke();
       }
-    } else if (isPhase && !isHead && i % 2 === 1) {
+    } else if (isPhase && !ghostExpiringBlink && !isHead && i % 2 === 1) {
       ctx.strokeStyle = 'hsla(262, 92%, 78%, 0.55)';
       ctx.lineWidth = 1.0;
       ctx.beginPath();
@@ -394,6 +429,35 @@ function drawSnake(timestamp) {
       drawSnakeEyes(seg);
     }
   }
+  ctx.restore();
+}
+
+// 选完强化后的透视准备态：在蛇头前方绘制脉冲方向指示箭头，帮助一眼确认当前朝向
+function drawPostUpgradeDirectionHint(timestamp) {
+  if (state !== 'paused' || !isPostUpgradeReady || snake.length === 0) return;
+  const head = snake[0];
+  const pulse = 0.5 + 0.5 * Math.sin(timestamp * 0.008);
+  const hx = (head.x + 0.5) * CELL_SIZE;
+  const hy = (head.y + 0.5) * CELL_SIZE;
+  const dist = CELL_SIZE * (0.95 + pulse * 0.25);
+  const tipX = hx + direction.x * (dist + 6);
+  const tipY = hy + direction.y * (dist + 6);
+  const baseX = hx + direction.x * (dist - 2);
+  const baseY = hy + direction.y * (dist - 2);
+  const perpX = -direction.y * 5.5;
+  const perpY = direction.x * 5.5;
+
+  ctx.save();
+  ctx.fillStyle = `hsla(43, 100%, 66%, ${(0.65 + pulse * 0.35).toFixed(2)})`;
+  ctx.strokeStyle = 'hsla(150, 20%, 8%, 0.85)';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(baseX + perpX, baseY + perpY);
+  ctx.lineTo(baseX - perpX, baseY - perpY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -451,6 +515,7 @@ function renderScene(timestamp, dtSeconds) {
   drawFood(timestamp);
   drawPowerUp(timestamp);
   drawSnake(timestamp);
+  drawPostUpgradeDirectionHint(timestamp);
   updateAndDrawEffects(dtSeconds);
 
   ctx.restore();

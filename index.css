@@ -276,12 +276,16 @@ body {
   transition: width 0.18s ease;
 }
 
-/* Item Legend (9 items, 3x3 grid with unlock status) */
+/* Item Legend (9 items, 3x3 grid with unlock status + tap-to-inspect popover) */
+.legend-wrap {
+  position: relative;
+}
+
 .item-legend {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px 8px;
-  padding: 7px 10px;
+  gap: 5px 6px;
+  padding: 6px 8px;
   background-color: var(--bg-board);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
@@ -290,22 +294,79 @@ body {
 }
 
 .legend-chip {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 2px 4px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.legend-chip:hover,
+.legend-chip.active {
+  background-color: hsla(150, 12%, 20%, 0.85);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
 }
 
 .legend-chip.locked {
-  opacity: 0.44;
+  opacity: 0.48;
+}
+
+.legend-chip.locked.active {
+  opacity: 0.92;
 }
 
 .legend-lv {
   font-size: 0.65rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--text-muted);
+}
+
+.legend-popover {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 5px);
+  z-index: 8;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  background-color: hsla(150, 14%, 11%, 0.96);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 8px 22px hsla(0, 0%, 0%, 0.55);
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.legend-popover.hidden {
+  display: none;
+}
+
+.legend-popover-title {
+  font-weight: 700;
+  color: var(--accent-gold);
+  white-space: nowrap;
+}
+
+.legend-popover-desc {
+  color: var(--text-secondary);
+  flex: 1 1 auto;
 }
 
 .dot {
@@ -429,6 +490,19 @@ body {
   white-space: nowrap;
 }
 
+@keyframes buffExpiringPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.38;
+  }
+}
+
+.buff-pill.expiring {
+  animation: buffExpiringPulse 0.36s ease-in-out infinite;
+}
+
 .rock-drip-chip {
   flex-shrink: 0;
   padding: 2px 6px;
@@ -459,21 +533,31 @@ body {
 
 .level-banner {
   position: absolute;
-  right: 6px;
+  left: 4px;
+  right: 4px;
   top: 50%;
   transform: translateY(-50%);
-  padding: 3px 9px;
+  padding: 4px 8px;
   border-radius: 5px;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 700;
-  background-color: hsla(356, 42%, 14%, 0.82);
+  line-height: 1.28;
+  text-align: center;
+  background-color: hsla(356, 44%, 13%, 0.94);
   backdrop-filter: blur(4px);
-  border: 1px solid hsla(356, 82%, 56%, 0.8);
-  color: hsl(356, 95%, 74%);
+  border: 1px solid hsla(356, 82%, 56%, 0.85);
+  color: hsl(356, 95%, 78%);
   pointer-events: none;
   z-index: 3;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
   transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.level-banner.mutator {
+  background-color: hsla(36, 48%, 12%, 0.96);
+  border-color: hsla(40, 94%, 56%, 0.88);
+  color: hsl(44, 100%, 78%);
 }
 
 .level-banner.hidden {
@@ -755,6 +839,31 @@ body {
   pointer-events: none;
 }
 
+/* 选完强化后的透视准备态：完全透明不模糊棋盘，仅在底部留紧凑启动提示条 */
+.board-overlay.post-upgrade-ready {
+  background: linear-gradient(to top, hsla(150, 14%, 7%, 0.88) 0%, hsla(150, 14%, 7%, 0.42) 26%, transparent 44%);
+  backdrop-filter: none;
+  justify-content: flex-end;
+  padding: 12px 14px;
+  gap: 5px;
+}
+
+.board-overlay.post-upgrade-ready .overlay-title {
+  font-size: 0.96rem;
+  color: var(--accent-gold);
+}
+
+.board-overlay.post-upgrade-ready .overlay-desc {
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  max-width: 100%;
+}
+
+.board-overlay.post-upgrade-ready .primary-btn {
+  padding: 6px 16px;
+  font-size: 0.82rem;
+}
+
 .overlay-title {
   font-size: 1.35rem;
   font-weight: 700;
@@ -1031,6 +1140,21 @@ body {
   font-variant-numeric: tabular-nums;
   color: var(--accent-gold);
   font-weight: 600;
+}
+
+.pause-mutator {
+  text-align: left;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background-color: hsla(36, 48%, 13%, 0.72);
+  border: 1px solid hsla(40, 88%, 54%, 0.5);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: hsl(44, 96%, 80%);
+}
+
+.pause-mutator strong {
+  color: hsl(45, 100%, 72%);
 }
 
 .mode-selector.hidden,

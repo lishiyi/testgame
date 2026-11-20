@@ -56,7 +56,10 @@
       </div>
     </section>
 
-    <section id="item-legend" class="item-legend" aria-label="道具解锁图鉴"></section>
+    <div class="legend-wrap">
+      <section id="item-legend" class="item-legend" aria-label="道具解锁图鉴"></section>
+      <div id="legend-popover" class="legend-popover hidden" role="status" aria-live="polite"></div>
+    </div>
 
     <section class="status-strip" aria-label="实时增益与关卡提示">
       <div id="buff-bar" class="buff-bar" aria-live="polite"></div>
@@ -97,9 +100,9 @@
 
         <!-- 首次开局核心机制速览 -->
         <div id="overlay-tips" class="overlay-tips">
-          <div class="tip-row"><span class="tip-icon lives">♥</span><span>撞墙停在原地扣 1 命并短暂无敌；撞碎石扣 1 命并撞碎该石，开盾可主动撞石连击</span></div>
+          <div class="tip-row"><span class="tip-icon lives">♥</span><span>撞墙扣 1 命并自动顺墙转向+短暂无敌；开盾可主动撞石连击，点击上方道具图鉴可查说明</span></div>
           <div class="tip-row"><span class="tip-icon warn">!</span><span>Lv.3 起定时落石（满额移石）；标准 Lv.15 / 困难 Lv.10 提前激活场地词缀</span></div>
-          <div class="tip-row"><span class="tip-icon rare">✦</span><span>每 3 关三选一（每局可免费重随 1 次），选完自动暂停方便观察走位</span></div>
+          <div class="tip-row"><span class="tip-icon rare">✦</span><span>每 3 关三选一（每局可重随 1 次，Lv.12+/宝箱高阶概率 ×1.5），选完透视棋盘按方向即开跑</span></div>
         </div>
 
         <!-- 暂停界面本局已选强化查看面板 -->

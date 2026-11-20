@@ -8,18 +8,21 @@ const CELL_SIZE = BASE_SIZE / GRID_COUNT;
 const INITIAL_INTERVAL = 140;       // Lv.1 初始每步间隔 (毫秒)
 const SPEED_GAIN_PER_LEVEL = 0.04;  // 每升 1 级速度倍率提升 0.04（隐藏属性）
 const SLOW_UPGRADE_STEP = 0.20;     // 每次减速强化降低的速度倍率
-const MIN_SPEED_MULT = 0.70;        // 隐藏速度倍率最低下限
+const MIN_SPEED_MULT = 0.78;        // 隐藏速度倍率最低下限（防止简单双减速过于拖沓）
 const POINTS_PER_LEVEL = 60;        // 初始每级基础升级分数（Lv.1–5）
 const CLEAR_LEVEL = 20;             // 达到第 20 关即判定通关胜利
+const ENDLESS_POINTS_BASE = 160;    // 无尽模式 Lv.20->21 起始升级分
+const ENDLESS_POINTS_STEP = 15;     // 无尽模式每多 1 关额外递增的升级门槛
 const UPGRADE_EVERY_LEVELS = 3;     // 每逢 3 的倍数关卡触发一次三选一强化
 const ENDLESS_MUTATOR_EVERY_LEVELS = 5; // 场地词缀每 5 关轮换一次
 const BASE_MAX_OBSTACLES = 18;      // 前中期场上基础岩石数量上限（Lv.1–7）
 const HARD_MAX_OBSTACLES = 36;      // 高关卡动态岩石数量封顶上限
+const MAX_SNAKE_LENGTH = 120;       // 单局蛇身长度软上限（防止无尽模式叠格膨胀）
 const INITIAL_LIVES = 3;            // 标准模式初始生命值与初始上限
 const HARD_MAX_LIVES = 6;           // 标准模式强化可提升的最大生命硬上限
 const INVULN_DURATION = 2.0;        // 受伤后的短暂无敌保护时间 (秒)
 const NIRVANA_INVULN_DURATION = 3.0;// 涅槃重生后的无敌保护时间 (秒)
-const LEVEL_FREEZE_DURATION = 4.0;  // 「时停」每关开始冻结时长 (秒)
+const LEVEL_FREEZE_DURATION = 3.2;  // 「时停」每关开始冻结时长 (秒)
 const PHASE_BODY_COOLDOWN = 10.0;   // 「相位穿身」冷却充能间隔 (秒)
 const PHASE_BODY_DURATION = 2.0;    // 「相位穿身」触发时自动获得的幽灵脱困时长 (秒)
 const COMBO_WINDOW = 5.0;           // 「连击」连续吃果有效时间窗口 (秒)
@@ -83,7 +86,8 @@ const POWERUP_TYPES = {
     unlockLevel: 1,
     weight: 25,
     dotClass: 'dot-gold',
-    color: 'hsl(43, 96%, 56%)'
+    color: 'hsl(43, 96%, 56%)',
+    desc: '直接获得 +30 基础分（受得分倍率加成），蛇身 +2 节'
   },
   bomb: {
     label: '爆破炸弹',
@@ -91,7 +95,8 @@ const POWERUP_TYPES = {
     unlockLevel: 2,
     weight: 14,
     dotClass: 'dot-bomb',
-    color: 'hsl(20, 95%, 58%)'
+    color: 'hsl(20, 95%, 58%)',
+    desc: '立即炸碎蛇头周围 11×11 全部岩石并按块计分'
   },
   double: {
     label: '双倍得分',
@@ -100,7 +105,8 @@ const POWERUP_TYPES = {
     weight: 18,
     dotClass: 'dot-double',
     color: 'hsl(39, 96%, 42%)',
-    duration: 8.0
+    duration: 8.0,
+    desc: '8 秒内所有果实、道具与碎石得分全部翻倍（×2）'
   },
   shield: {
     label: '穿墙护盾',
@@ -109,7 +115,8 @@ const POWERUP_TYPES = {
     weight: 20,
     dotClass: 'dot-shield',
     color: 'hsl(164, 82%, 50%)',
-    duration: 7.5
+    duration: 7.5,
+    desc: '7.5 秒可穿透边界，并主动撞碎岩石计分与叠加连击'
   },
   heart: {
     label: '生命之心',
@@ -117,7 +124,8 @@ const POWERUP_TYPES = {
     unlockLevel: 5,
     weight: 12,
     dotClass: 'dot-heart',
-    color: 'hsl(345, 92%, 64%)'
+    color: 'hsl(345, 92%, 64%)',
+    desc: '立即恢复 1 点生命值（仅生命未满时刷新）'
   },
   ice: {
     label: '寒冰减速',
@@ -126,7 +134,8 @@ const POWERUP_TYPES = {
     weight: 20,
     dotClass: 'dot-ice',
     color: 'hsl(196, 88%, 62%)',
-    duration: 6.0
+    duration: 6.0,
+    desc: '6 秒内大幅放缓移动速度，高压局面精准控蛇'
   },
   scissors: {
     label: '缩身剪刀',
@@ -134,7 +143,8 @@ const POWERUP_TYPES = {
     unlockLevel: 8,
     weight: 15,
     dotClass: 'dot-scissors',
-    color: 'hsl(220, 82%, 48%)'
+    color: 'hsl(220, 82%, 48%)',
+    desc: '立即剪短蛇尾 5 节（蛇长越长刷新概率越高）'
   },
   ghost: {
     label: '幽灵相位',
@@ -143,7 +153,8 @@ const POWERUP_TYPES = {
     weight: 15,
     dotClass: 'dot-ghost',
     color: 'hsl(258, 90%, 76%)',
-    duration: 6.5
+    duration: 6.5,
+    desc: '6.5 秒幽灵化，可安全穿过自身蛇身不扣血'
   },
   chest: {
     label: '神秘宝箱',
@@ -151,7 +162,8 @@ const POWERUP_TYPES = {
     unlockLevel: 12,
     weight: 8,
     dotClass: 'dot-chest',
-    color: 'hsl(32, 98%, 56%)'
+    color: 'hsl(32, 98%, 56%)',
+    desc: '立即开启一次额外三选一强化（稀有/传说概率 ×1.5）'
   }
 };
 
@@ -163,9 +175,9 @@ const RARITY_CONFIG = {
   legendary: { label: '传说', weight: 1 }
 };
 
-// 分段升级门槛：Lv.1–5 每级 60 分，Lv.6–12 每级 90 分，Lv.13–19 每级 130 分，Lv.20+ 无尽每级 160 分
+// 分段升级门槛：Lv.1–5 每级 60 分，Lv.6–12 每级 90 分，Lv.13–19 每级 130 分，Lv.20+ 无尽起 160 分且每关递增 +15 分
 function getPointsForNextLevel(lv) {
-  if (lv >= CLEAR_LEVEL) return 160;
+  if (lv >= CLEAR_LEVEL) return ENDLESS_POINTS_BASE + (lv - CLEAR_LEVEL) * ENDLESS_POINTS_STEP;
   if (lv >= 13) return 130;
   if (lv >= 6) return 90;
   return POINTS_PER_LEVEL;
@@ -215,7 +227,7 @@ const ENDLESS_MUTATORS = {
   swift_loot: {
     id: 'swift_loot',
     name: '疾速秘宝',
-    desc: '道具刷新加快 35%，但场上停留时间缩短 35%'
+    desc: '道具刷新加快 35% 且优先就近刷新，场上停留时间缩短 35%'
   },
   overdrive: {
     id: 'overdrive',
@@ -246,8 +258,16 @@ function getBombDynamicWeight(rockCount) {
   return Math.min(BOMB_WEIGHT_MAX, POWERUP_TYPES.bomb.weight + extraSteps * 2);
 }
 
-// 「以石养身」：每累计碎 18 块岩石回复 1 点生命；满血时改为获得 4 秒护盾
-const STONE_FEAST_THRESHOLD = 18;
+// 缩身剪刀动态权重：蛇身达到 24 节后每多 8 节权重 +3，基础 15、最高 27（缓解不抽倍率卡时的控长压力）
+const SCISSORS_WEIGHT_MAX = 27;
+function getScissorsDynamicWeight(snakeLen) {
+  if (snakeLen < 24) return POWERUP_TYPES.scissors.weight;
+  const extraSteps = Math.floor((snakeLen - 24) / 8) + 1;
+  return Math.min(SCISSORS_WEIGHT_MAX, POWERUP_TYPES.scissors.weight + extraSteps * 3);
+}
+
+// 「以石养身」：每累计碎 13 块岩石回复 1 点生命；满血时改为获得 4 秒护盾
+const STONE_FEAST_THRESHOLD = 13;
 const STONE_FEAST_SHIELD_SEC = 4.0;
 
 // 定时落石间隔（秒）：Lv.1–2 不落石，Lv.3–9 每 12s，Lv.10–14 每 9s，Lv.15+ / 无尽每 7s

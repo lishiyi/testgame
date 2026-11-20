@@ -18,6 +18,7 @@ const nextUpgradeHintEl = document.getElementById('next-upgrade-hint');
 const snakeLenEl = document.getElementById('snake-len-value');
 const levelProgressFillEl = document.getElementById('level-progress-fill');
 const itemLegendEl = document.getElementById('item-legend');
+const legendPopoverEl = document.getElementById('legend-popover');
 const buffBarEl = document.getElementById('buff-bar');
 const rockDripChipEl = document.getElementById('rock-drip-chip');
 const levelBannerEl = document.getElementById('level-banner');
@@ -101,10 +102,15 @@ let hasBerserkRush = false;   // 双刃卡「极速猎手」
 let treasureSenseLevel = 0;   // 「寻宝嗅觉」层数（0~2）
 let emergencyArmorLevel = 0;  // 「应急护甲」层数（0~2）
 let rerollsLeft = INITIAL_REROLLS; // 每局三选一剩余重随次数
+let endlessAegisPickCount = 0;     // 无尽模式中已选取「圣盾赐福」的次数（用于收益递减）
 
 let pendingUpgradeLevels = []; // Array<number | 'chest'>
+let currentUpgradeSource = null; // 当前弹窗来源（关卡数或 'chest'，重随时保留高阶加成）
 let currentChoices = [];
 let pickedUpgrades = [];       // Array<{ name, rarity }>
+let isPostUpgradeReady = false; // 是否处于选完强化后的棋盘透视准备态
+let activeLegendItem = null;
+let legendPopoverTimeout = null;
 let runElapsedSec = 0;
 let rocksSmashed = 0;
 let damageStats = { wall: 0, rock: 0, self: 0 }; // 受击分类统计
@@ -166,6 +172,20 @@ function setDifficulty(mode) {
   }
 }
 
+// 无尽模式下「圣盾赐福」收益递减：第 1 次 10s+回血，第 2 次 8s+回血，第 3 次起 6s->4s 且不再回血
+function getInstantAegisProfile() {
+  if (!endlessMode || endlessAegisPickCount <= 0) {
+    return { shieldBaseSec: 10, canHeal: true };
+  }
+  if (endlessAegisPickCount === 1) {
+    return { shieldBaseSec: 8, canHeal: true };
+  }
+  return {
+    shieldBaseSec: Math.max(4, 10 - endlessAegisPickCount * 2),
+    canHeal: false
+  };
+}
+
 // ------------------------------------------
 // 三选一强化词条池（共 19 项：8 普 / 5 罕 / 4 稀 / 2 传，含 2 张高风险双刃卡）
 // ------------------------------------------
@@ -218,11 +238,11 @@ const UPGRADE_POOL = [
     id: 'score_boost',
     name: '黄金胃口',
     rarity: 'common',
-    getDesc: () => `苹果与金果得分永久 +50%（倍率 ${scoreMultiplier.toFixed(1)}x→${(scoreMultiplier + 0.5).toFixed(1)}x，减少长身体次数）`,
+    getDesc: () => `苹果与金果得分永久 +40%（倍率 ${scoreMultiplier.toFixed(1)}x→${(scoreMultiplier + 0.4).toFixed(1)}x，减少长身体次数）`,
     canPick: () => scoreBoostCount < 3,
     apply: () => {
       scoreBoostCount += 1;
-      scoreMultiplier = +(scoreMultiplier + 0.5).toFixed(1);
+      scoreMultiplier = +(scoreMultiplier + 0.4).toFixed(1);
       addFloatingText(snake[0].x, snake[0].y, `得分 ${scoreMultiplier.toFixed(1)}x!`, 'hsl(43, 96%, 64%)');
     }
   },
@@ -310,12 +330,22 @@ const UPGRADE_POOL = [
     id: 'instant_aegis',
     name: '圣盾赐福',
     rarity: 'uncommon',
-    getDesc: () => '立即获得 10 秒穿墙碎石护盾，若生命未满额外恢复 1 点生命',
+    getDesc: () => {
+      const { shieldBaseSec, canHeal } = getInstantAegisProfile();
+      if (endlessMode && endlessAegisPickCount > 0) {
+        return canHeal
+          ? `无尽递减：立即获得 ${shieldBaseSec} 秒穿墙碎石护盾，若生命未满额外恢复 1 点生命`
+          : `无尽递减：立即获得 ${shieldBaseSec} 秒穿墙碎石护盾（无尽多次触发后不再回血）`;
+      }
+      return `立即获得 ${shieldBaseSec} 秒穿墙碎石护盾，若生命未满额外恢复 1 点生命`;
+    },
     canPick: () => true,
     apply: () => {
-      shieldTimer = Math.max(shieldTimer, 10 + buffBonusSec);
-      if (lives < maxLives) lives += 1;
-      addFloatingText(snake[0].x, snake[0].y, '10s 圣盾护体!', 'hsl(206, 95%, 76%)');
+      const { shieldBaseSec, canHeal } = getInstantAegisProfile();
+      shieldTimer = Math.max(shieldTimer, shieldBaseSec + buffBonusSec);
+      if (canHeal && lives < maxLives) lives += 1;
+      if (endlessMode) endlessAegisPickCount += 1;
+      addFloatingText(snake[0].x, snake[0].y, `${shieldBaseSec}s 圣盾护体!`, 'hsl(206, 95%, 76%)');
     }
   },
   {
@@ -346,12 +376,12 @@ const UPGRADE_POOL = [
     name: '狂暴胃口',
     rarity: 'uncommon',
     isDoubleEdged: true,
-    getDesc: () => `苹果与金果得分永久 +80%（${scoreMultiplier.toFixed(1)}x→${(scoreMultiplier + 0.8).toFixed(1)}x）；代价：吃苹果额外多长 1 节蛇身`,
+    getDesc: () => `苹果与金果得分永久 +100%（${scoreMultiplier.toFixed(1)}x→${(scoreMultiplier + 1.0).toFixed(1)}x）；代价：吃苹果额外多长 1 节蛇身`,
     canPick: () => !hasGreedyMaw,
     apply: () => {
       hasGreedyMaw = true;
       extraFoodGrowth += 1;
-      scoreMultiplier = +(scoreMultiplier + 0.8).toFixed(1);
+      scoreMultiplier = +(scoreMultiplier + 1.0).toFixed(1);
       addFloatingText(snake[0].x, snake[0].y, `狂暴胃口 ${scoreMultiplier.toFixed(1)}x!`, 'hsl(32, 98%, 66%)');
     }
   },
@@ -361,12 +391,12 @@ const UPGRADE_POOL = [
     rarity: 'rare',
     getDesc: () => magnetLevel === 0
       ? '自动隔空吸取周围 1 格内的苹果与道具，且道具刷新加快 25%'
-      : '道具刷新速度再加快 25%，并立即在场上召唤一个随机道具',
+      : '道具吸附范围扩大至周围 2 格（5×5），刷新再加快 25% 并立即召唤一个随机道具',
     canPick: () => magnetLevel < 2,
     apply: () => {
       magnetLevel += 1;
       if (!powerUp) spawnPowerUp();
-      addFloatingText(snake[0].x, snake[0].y, magnetLevel === 1 ? '磁力光环激活!' : '磁力强化!', 'hsl(276, 96%, 80%)');
+      addFloatingText(snake[0].x, snake[0].y, magnetLevel === 1 ? '磁力光环激活!' : '磁力 2 格强化!', 'hsl(276, 96%, 80%)');
     }
   },
   {
@@ -386,7 +416,7 @@ const UPGRADE_POOL = [
     name: '以石养身',
     rarity: 'rare',
     getDesc: () => `每累计碎 ${STONE_FEAST_THRESHOLD} 块岩石回复 1 点生命；生命已满时改为获得 ${STONE_FEAST_SHIELD_SEC} 秒护盾`,
-    canPick: () => !hasStoneFeast,
+    canPick: () => !hasStoneFeast && level >= 6,
     apply: () => {
       hasStoneFeast = true;
       stoneFeastProgress = 0;
@@ -399,7 +429,7 @@ const UPGRADE_POOL = [
     rarity: 'rare',
     isDoubleEdged: true,
     getDesc: () => '所有碎石得分与连击加分永久翻倍（×2）；代价：移动速度永久加快 15%',
-    canPick: () => !hasBerserkRush,
+    canPick: () => !hasBerserkRush && level >= 6,
     apply: () => {
       hasBerserkRush = true;
       recalcBaseInterval();
@@ -551,28 +581,65 @@ function rollEndlessMutator(forcedKey = null) {
   return ENDLESS_MUTATORS[nextKey];
 }
 
-// 道具实际刷新权重：炸弹随场上岩石数量动态提升，并叠加词缀与「爆破专家」加成
+// 道具实际刷新权重：炸弹随场上岩石数量动态提升，缩身剪刀随蛇长动态提升
 function getPowerUpWeight(type) {
   if (type === 'bomb') {
     const mutatorBonus = activeMutator === 'double_meteor' ? 6 : 0;
     return (getBombDynamicWeight(obstacles.length) + mutatorBonus) * (1 + 0.5 * blastExpertLevel);
   }
+  if (type === 'scissors') {
+    return getScissorsDynamicWeight(snake.length);
+  }
   return POWERUP_TYPES[type].weight;
 }
 
 // ------------------------------------------
-// 道具图鉴与关卡解锁流程
+// 道具图鉴与关卡解锁流程（支持移动端点击浮层查看道具说明）
 // ------------------------------------------
+function hideLegendPopover() {
+  activeLegendItem = null;
+  if (legendPopoverTimeout) {
+    clearTimeout(legendPopoverTimeout);
+    legendPopoverTimeout = null;
+  }
+  if (legendPopoverEl) {
+    legendPopoverEl.classList.add('hidden');
+  }
+  renderLegend();
+}
+
+function showLegendPopover(type) {
+  const cfg = POWERUP_TYPES[type];
+  if (!cfg || !legendPopoverEl) return;
+  if (activeLegendItem === type && !legendPopoverEl.classList.contains('hidden')) {
+    hideLegendPopover();
+    return;
+  }
+  activeLegendItem = type;
+  const unlockText = level >= cfg.unlockLevel ? '已解锁' : `Lv.${cfg.unlockLevel} 解锁`;
+  legendPopoverEl.innerHTML = `
+    <span class="legend-popover-title">${cfg.label}（${unlockText}）</span>
+    <span class="legend-popover-desc">${cfg.desc}</span>
+  `;
+  legendPopoverEl.classList.remove('hidden');
+  renderLegend();
+  if (legendPopoverTimeout) clearTimeout(legendPopoverTimeout);
+  legendPopoverTimeout = setTimeout(() => {
+    hideLegendPopover();
+  }, 4000);
+}
+
 function renderLegend() {
   if (!itemLegendEl) return;
-  const html = Object.values(POWERUP_TYPES)
-    .map((cfg) => {
+  const html = Object.entries(POWERUP_TYPES)
+    .map(([key, cfg]) => {
       const unlocked = level >= cfg.unlockLevel;
-      return `<span class="legend-chip ${unlocked ? '' : 'locked'}" title="Lv.${cfg.unlockLevel} 解锁：${cfg.label}">
+      const isActive = activeLegendItem === key;
+      return `<button type="button" class="legend-chip ${unlocked ? '' : 'locked'}${isActive ? ' active' : ''}" data-item="${key}" title="Lv.${cfg.unlockLevel} 解锁：${cfg.label} — ${cfg.desc}">
         <i class="dot ${cfg.dotClass}"></i>
         <span>${unlocked ? cfg.label : cfg.shortLabel}</span>
         ${unlocked ? '' : `<span class="legend-lv">Lv.${cfg.unlockLevel}</span>`}
-      </span>`;
+      </button>`;
     })
     .join('');
   itemLegendEl.innerHTML = html;
@@ -731,11 +798,12 @@ function checkLevelUp() {
     playTone(pendingUpgradeLevels.length > 0 ? 'upgrade' : 'levelup');
     if (rotatedMutator) {
       const labelPrefix = hadMutatorBefore ? `Lv.${level} 词缀轮换` : `Lv.${level} 精英阶段·词缀激活`;
-      showLevelBanner(`${labelPrefix}【${rotatedMutator.name}】：${rotatedMutator.desc}`);
+      showLevelBanner(`${labelPrefix}【${rotatedMutator.name}】：${rotatedMutator.desc}`, { isMutator: true, duration: 4.2 });
     } else if (spawnedRocks > 0) {
       showLevelBanner(`Lv.${level} 关卡提升！注意红色落石预警`);
     } else {
       levelBannerEl.classList.add('hidden');
+      levelBannerEl.classList.remove('mutator');
       bannerTimer = 0;
     }
     updateHUD();
@@ -743,20 +811,33 @@ function checkLevelUp() {
   }
 }
 
-function pickWeightedUpgrades(count = 3, excludeIds = null) {
+// Lv.12+ 里程碑与神秘宝箱：稀有与传说强化卡权重 ×1.5
+function isHighTierUpgradeSource(source) {
+  return source === 'chest' || (typeof source === 'number' && source >= 12);
+}
+
+function getEffectiveRarityWeight(rarity, highTierBoost = false) {
+  const base = RARITY_CONFIG[rarity].weight;
+  if (highTierBoost && (rarity === 'rare' || rarity === 'legendary')) {
+    return base * 1.5;
+  }
+  return base;
+}
+
+function pickWeightedUpgrades(count = 3, excludeIds = null, highTierBoost = false) {
   const allEligible = UPGRADE_POOL.filter((u) => u.canPick());
   const pickFromPool = (pool, needed) => {
     const rem = pool.slice();
     const out = [];
     while (out.length < needed && rem.length > 0) {
       const totalWeight = rem.reduce(
-        (sum, item) => sum + RARITY_CONFIG[item.rarity].weight,
+        (sum, item) => sum + getEffectiveRarityWeight(item.rarity, highTierBoost),
         0
       );
       let roll = Math.random() * totalWeight;
       let chosenIdx = rem.length - 1;
       for (let i = 0; i < rem.length; i++) {
-        roll -= RARITY_CONFIG[rem[i].rarity].weight;
+        roll -= getEffectiveRarityWeight(rem[i].rarity, highTierBoost);
         if (roll <= 0) {
           chosenIdx = i;
           break;
@@ -827,7 +908,8 @@ function rerollUpgradeChoices() {
   if (totalEligible <= currentChoices.length) return false;
 
   const excludeIds = new Set(currentChoices.map((u) => u.id));
-  currentChoices = pickWeightedUpgrades(3, excludeIds);
+  const boosted = isHighTierUpgradeSource(currentUpgradeSource);
+  currentChoices = pickWeightedUpgrades(3, excludeIds, boosted);
   rerollsLeft -= 1;
   playTone('levelup');
   renderUpgradeCards();
@@ -836,7 +918,7 @@ function rerollUpgradeChoices() {
 
 function syncPlayingTouchLock() {
   if (typeof document !== 'undefined' && document.body && document.body.classList) {
-    document.body.classList.toggle('is-playing', state === 'running');
+    document.body.classList.toggle('is-playing', state === 'running' || (state === 'paused' && isPostUpgradeReady));
   }
 }
 
@@ -844,16 +926,23 @@ function openNextUpgradeChoice() {
   if (pendingUpgradeLevels.length === 0 || state !== 'running') return;
 
   const source = pendingUpgradeLevels.shift();
-  currentChoices = pickWeightedUpgrades(3);
-  if (currentChoices.length === 0) return;
+  const boosted = isHighTierUpgradeSource(source);
+  currentUpgradeSource = source;
+  currentChoices = pickWeightedUpgrades(3, null, boosted);
+  if (currentChoices.length === 0) {
+    currentUpgradeSource = null;
+    return;
+  }
 
   state = 'choosing';
+  isPostUpgradeReady = false;
   syncPlayingTouchLock();
   pauseBtn.disabled = true;
 
+  const boostSuffix = boosted ? ' · 高阶概率 ×1.5' : '';
   upgradeBadgeEl.textContent = source === 'chest'
-    ? '🎁 神秘宝箱奖励'
-    : `Lv.${source} 里程碑奖励`;
+    ? `🎁 神秘宝箱奖励${boostSuffix}`
+    : `Lv.${source} 里程碑奖励${boostSuffix}`;
   renderUpgradeCards();
 
   upgradeOverlayEl.classList.remove('hidden');
@@ -864,6 +953,7 @@ function selectUpgrade(index) {
 
   const chosen = currentChoices[index];
   currentChoices = [];
+  currentUpgradeSource = null;
   pickedUpgrades.push({ name: chosen.name, rarity: chosen.rarity });
   playTone('upgrade');
   chosen.apply();
@@ -883,20 +973,22 @@ function selectUpgrade(index) {
     upgradeOverlayEl.classList.add('hidden');
     directionQueue = [];
     stepAccumulator = 0;
-    pauseGame('强化已生效', `已获得「${chosen.name}」，确认走位后按空格或点击继续。`);
+    pauseAfterUpgrade(chosen);
   }
 }
 
-function showLevelBanner(text) {
+function showLevelBanner(text, { isMutator = false, duration = 2.4 } = {}) {
   levelBannerEl.textContent = text;
+  levelBannerEl.classList.toggle('mutator', Boolean(isMutator));
   levelBannerEl.classList.remove('hidden');
-  bannerTimer = 2.4;
+  bannerTimer = duration;
 }
 
 // ------------------------------------------
 // 初始化、暂停、战绩结算与分享
 // ------------------------------------------
 function initGameData() {
+  isPostUpgradeReady = false;
   syncPlayingTouchLock();
   const cfg = getDifficultyCfg();
   snake = [
@@ -938,8 +1030,10 @@ function initGameData() {
   treasureSenseLevel = 0;
   emergencyArmorLevel = 0;
   rerollsLeft = INITIAL_REROLLS;
+  endlessAegisPickCount = 0;
 
   pendingUpgradeLevels = [];
+  currentUpgradeSource = null;
   currentChoices = [];
   pickedUpgrades = [];
   runElapsedSec = 0;
@@ -964,8 +1058,11 @@ function initGameData() {
   comboTimer = 0;
 
   levelBannerEl.classList.add('hidden');
+  levelBannerEl.classList.remove('mutator');
   upgradeOverlayEl.classList.add('hidden');
+  overlayEl.classList.remove('post-upgrade-ready');
   if (pauseUpgradesEl) pauseUpgradesEl.classList.add('hidden');
+  hideLegendPopover();
 
   obstacles = createInitialObstacles();
   powerUp = null;
@@ -985,6 +1082,7 @@ function initGameData() {
 function startGame() {
   initGameData();
   state = 'running';
+  isPostUpgradeReady = false;
   syncPlayingTouchLock();
   stepAccumulator = 0;
   lastFrameTime = performance.now();
@@ -996,18 +1094,21 @@ function startGame() {
   runSummaryEl.classList.add('hidden');
   endlessBtn.classList.add('hidden');
   shareBtn.classList.add('hidden');
+  overlayEl.classList.remove('post-upgrade-ready');
   overlayEl.classList.add('hidden');
 }
 
 function continueEndlessMode() {
   if (state !== 'won' || endlessMode) return;
   endlessMode = true;
+  endlessAegisPickCount = 0;
   if (level > bestEndlessLevel) {
     bestEndlessLevel = level;
     saveBestEndlessLevel(bestEndlessLevel, difficulty);
   }
   const mut = rollEndlessMutator();
   state = 'running';
+  isPostUpgradeReady = false;
   syncPlayingTouchLock();
   directionQueue = [];
   stepAccumulator = 0;
@@ -1026,8 +1127,9 @@ function continueEndlessMode() {
   endlessBtn.classList.add('hidden');
   shareBtn.classList.add('hidden');
   runSummaryEl.classList.add('hidden');
+  overlayEl.classList.remove('post-upgrade-ready');
   overlayEl.classList.add('hidden');
-  showLevelBanner(`无尽开启！场地词缀【${mut.name}】：${mut.desc}`);
+  showLevelBanner(`无尽开启！场地词缀【${mut.name}】：${mut.desc}`, { isMutator: true, duration: 4.2 });
   if (snake.length > 0) {
     addFloatingText(snake[0].x, snake[0].y, `∞ 词缀·${mut.name}!`, 'hsl(43, 98%, 70%)');
   }
@@ -1060,11 +1162,16 @@ function renderPauseUpgrades() {
   if (!pauseUpgradesEl) return;
   const modeLabel = getDifficultyCfg().label;
   const chipsHtml = buildGroupedUpgradeChipsHtml('暂未解锁强化（Lv.3 解锁首次三选一）');
+  const mut = activeMutator && ENDLESS_MUTATORS[activeMutator] ? ENDLESS_MUTATORS[activeMutator] : null;
+  const mutHtml = mut
+    ? `<div class="pause-mutator"><strong>⚡ 当前词缀【${mut.name}】：</strong>${mut.desc}</div>`
+    : '';
   pauseUpgradesEl.innerHTML = `
     <div class="pause-upgrades-header">
       <span><strong>本局已选强化</strong>（共 ${pickedUpgrades.length} 项）</span>
       <span class="pause-upgrades-meta">${modeLabel} · 重随 ${rerollsLeft}/${INITIAL_REROLLS}</span>
     </div>
+    ${mutHtml}
     <div class="summary-upgrades">${chipsHtml}</div>
   `;
 }
@@ -1074,6 +1181,7 @@ function pauseGame(
   desc = '按空格键或点击下方按钮继续挑战。'
 ) {
   state = 'paused';
+  isPostUpgradeReady = false;
   syncPlayingTouchLock();
   pauseBtn.disabled = false;
   pauseBtn.textContent = '继续';
@@ -1082,8 +1190,31 @@ function pauseGame(
     showTips: false,
     showPauseUpgrades: true,
     showSummary: false,
-    showMode: false
+    showMode: false,
+    postUpgradeReady: false
   });
+}
+
+// 选完强化后的轻量棋盘透视准备态：不模糊遮挡棋盘，蛇头带脉冲箭头，按任意方向/滑动/空格立刻开跑
+function pauseAfterUpgrade(chosen) {
+  state = 'paused';
+  isPostUpgradeReady = true;
+  syncPlayingTouchLock();
+  pauseBtn.disabled = false;
+  pauseBtn.textContent = '继续';
+  renderPauseUpgrades();
+  showOverlay(
+    `✦ 已获得「${chosen.name}」`,
+    '观察棋盘走位，按方向键 / 滑动 / 空格或点击立即开跑',
+    '立即继续',
+    {
+      showTips: false,
+      showPauseUpgrades: false,
+      showSummary: false,
+      showMode: false,
+      postUpgradeReady: true
+    }
+  );
 }
 
 function togglePause() {
@@ -1091,11 +1222,13 @@ function togglePause() {
     pauseGame('已暂停', '按空格键或点击下方按钮继续挑战。');
   } else if (state === 'paused') {
     state = 'running';
+    isPostUpgradeReady = false;
     syncPlayingTouchLock();
     stepAccumulator = 0;
     lastFrameTime = performance.now();
     pauseBtn.textContent = '暂停';
     if (pauseUpgradesEl) pauseUpgradesEl.classList.add('hidden');
+    overlayEl.classList.remove('post-upgrade-ready');
     overlayEl.classList.add('hidden');
   }
 }
@@ -1210,11 +1343,13 @@ async function copyShareStats() {
 
 function endGame(won = false) {
   state = won ? 'won' : 'gameover';
+  isPostUpgradeReady = false;
   syncPlayingTouchLock();
   pauseBtn.disabled = true;
   pauseBtn.textContent = '暂停';
   upgradeOverlayEl.classList.add('hidden');
   levelBannerEl.classList.add('hidden');
+  levelBannerEl.classList.remove('mutator');
   playTone(won ? 'win' : 'gameover');
 
   if (won && snake.length > 0) {
@@ -1256,7 +1391,8 @@ function endGame(won = false) {
       showPauseUpgrades: false,
       showSummary: true,
       showEndless: !endlessMode,
-      showMode: true
+      showMode: true,
+      postUpgradeReady: false
     });
   } else {
     const desc = endlessMode
@@ -1267,15 +1403,17 @@ function endGame(won = false) {
       showPauseUpgrades: false,
       showSummary: true,
       showEndless: false,
-      showMode: true
+      showMode: true,
+      postUpgradeReady: false
     });
   }
 }
 
-function showOverlay(title, desc, btnText, { showTips = false, showPauseUpgrades = false, showSummary = false, showEndless = false, showMode = false } = {}) {
+function showOverlay(title, desc, btnText, { showTips = false, showPauseUpgrades = false, showSummary = false, showEndless = false, showMode = false, postUpgradeReady = false } = {}) {
   overlayTitleEl.textContent = title;
   overlayDescEl.textContent = desc;
   startBtn.textContent = btnText;
+  overlayEl.classList.toggle('post-upgrade-ready', Boolean(postUpgradeReady));
   if (modeSelectorEl) modeSelectorEl.classList.toggle('hidden', !showMode);
   overlayTipsEl.classList.toggle('hidden', !showTips);
   if (pauseUpgradesEl) pauseUpgradesEl.classList.toggle('hidden', !showPauseUpgrades);
@@ -1320,40 +1458,44 @@ function updateHUD() {
   }
 
   const len = snake.length;
-  snakeLenEl.textContent = `蛇长 ${len} 节`;
+  snakeLenEl.textContent = len >= MAX_SNAKE_LENGTH ? `蛇长 ${len}(上限)` : `蛇长 ${len} 节`;
   snakeLenEl.classList.toggle('warn', len >= 30 && len < 50);
   snakeLenEl.classList.toggle('danger', len >= 50);
 }
 
+// 状态栏严格按紧迫优先级排序：词缀 + 限时倒计时（带到期闪烁）+ 动态计数/传说状态，静态被动折叠为紧凑徽章避免手机端两行静默裁切
 function renderBuffBar() {
   const pills = [];
   if (activeMutator && ENDLESS_MUTATORS[activeMutator]) {
     const mut = ENDLESS_MUTATORS[activeMutator];
     pills.push(`<span class="buff-pill" title="${mut.desc}" style="border-color: hsl(38, 95%, 56%); color: hsl(43, 100%, 76%);">词缀·${mut.name}</span>`);
   }
-  if (nirvanaCharges > 0) {
-    pills.push('<span class="buff-pill" style="border-color: hsl(28, 96%, 56%); color: hsl(32, 100%, 78%);">涅槃待命</span>');
-  }
-  if (hasStarfallResonance) {
-    pills.push('<span class="buff-pill" style="border-color: hsl(42, 98%, 56%); color: hsl(44, 100%, 78%);">✦ 星陨共鸣</span>');
-  }
   if (invulnTimer > 0) {
-    pills.push(`<span class="buff-pill" style="border-color: hsl(345, 86%, 56%); color: hsl(345, 95%, 76%);">无敌 ${invulnTimer.toFixed(1)}s</span>`);
+    const exp = invulnTimer < 0.8 ? ' expiring' : '';
+    pills.push(`<span class="buff-pill${exp}" style="border-color: hsl(345, 86%, 56%); color: hsl(345, 95%, 76%);">无敌 ${invulnTimer.toFixed(1)}s</span>`);
   }
   if (freezeTimer > 0) {
-    pills.push(`<span class="buff-pill" style="border-color: hsl(202, 92%, 60%); color: hsl(202, 98%, 80%);">时停 ${freezeTimer.toFixed(1)}s</span>`);
-  }
-  if (doubleTimer > 0) {
-    pills.push(`<span class="buff-pill" style="border-color: hsl(39, 94%, 42%); color: hsl(42, 96%, 66%);">双倍 ${doubleTimer.toFixed(1)}s</span>`);
+    const exp = freezeTimer < 1.2 ? ' expiring' : '';
+    pills.push(`<span class="buff-pill${exp}" style="border-color: hsl(202, 92%, 60%); color: hsl(202, 98%, 80%);">时停 ${freezeTimer.toFixed(1)}s</span>`);
   }
   if (shieldTimer > 0) {
-    pills.push(`<span class="buff-pill" style="border-color: hsl(164, 78%, 45%); color: hsl(164, 88%, 72%);">护盾 ${shieldTimer.toFixed(1)}s</span>`);
-  }
-  if (iceTimer > 0) {
-    pills.push(`<span class="buff-pill" style="border-color: hsl(196, 80%, 52%); color: hsl(196, 92%, 76%);">减速 ${iceTimer.toFixed(1)}s</span>`);
+    const exp = shieldTimer < 1.5 ? ' expiring' : '';
+    pills.push(`<span class="buff-pill${exp}" style="border-color: hsl(164, 78%, 45%); color: hsl(164, 88%, 72%);">护盾 ${shieldTimer.toFixed(1)}s</span>`);
   }
   if (ghostTimer > 0) {
-    pills.push(`<span class="buff-pill" style="border-color: hsl(258, 82%, 68%); color: hsl(258, 96%, 84%);">幽灵 ${ghostTimer.toFixed(1)}s</span>`);
+    const exp = ghostTimer < 1.0 ? ' expiring' : '';
+    pills.push(`<span class="buff-pill${exp}" style="border-color: hsl(258, 82%, 68%); color: hsl(258, 96%, 84%);">幽灵 ${ghostTimer.toFixed(1)}s</span>`);
+  }
+  if (doubleTimer > 0) {
+    const exp = doubleTimer < 1.5 ? ' expiring' : '';
+    pills.push(`<span class="buff-pill${exp}" style="border-color: hsl(39, 94%, 42%); color: hsl(42, 96%, 66%);">双倍 ${doubleTimer.toFixed(1)}s</span>`);
+  }
+  if (iceTimer > 0) {
+    const exp = iceTimer < 1.5 ? ' expiring' : '';
+    pills.push(`<span class="buff-pill${exp}" style="border-color: hsl(196, 80%, 52%); color: hsl(196, 92%, 76%);">减速 ${iceTimer.toFixed(1)}s</span>`);
+  }
+  if (comboUpgradeLevel > 0 && comboCount >= 2 && comboTimer > 0) {
+    pills.push(`<span class="buff-pill" style="border-color: hsl(46, 96%, 54%); color: hsl(48, 100%, 76%);">连击 x${comboCount}</span>`);
   }
   if (hasPhaseBody) {
     if (phaseBodyCooldown <= 0) {
@@ -1362,30 +1504,30 @@ function renderBuffBar() {
       pills.push(`<span class="buff-pill" style="border-color: hsla(276, 40%, 54%, 0.55); color: hsl(276, 35%, 72%);">相位 ${phaseBodyCooldown.toFixed(1)}s</span>`);
     }
   }
-  if (comboUpgradeLevel > 0 && comboCount >= 2 && comboTimer > 0) {
-    pills.push(`<span class="buff-pill" style="border-color: hsl(46, 96%, 54%); color: hsl(48, 100%, 76%);">连击 x${comboCount}</span>`);
-  }
-  if (magnetLevel > 0) {
-    pills.push(`<span class="buff-pill" style="border-color: hsl(276, 82%, 64%); color: hsl(276, 96%, 82%);">磁力 Lv.${magnetLevel}</span>`);
-  }
-  if (blastExpertLevel > 0) {
-    pills.push(`<span class="buff-pill" style="border-color: hsl(20, 92%, 56%); color: hsl(24, 98%, 74%);">爆破专家</span>`);
-  }
   if (hasStoneFeast) {
     pills.push(`<span class="buff-pill" style="border-color: hsl(152, 70%, 46%); color: hsl(152, 85%, 72%);">养身 ${stoneFeastProgress}/${STONE_FEAST_THRESHOLD}</span>`);
   }
-  if (hasGreedyMaw) {
-    pills.push('<span class="buff-pill" style="border-color: hsl(28, 92%, 54%); color: hsl(34, 98%, 74%);">狂暴胃口 +1长</span>');
+  if (nirvanaCharges > 0) {
+    pills.push('<span class="buff-pill" style="border-color: hsl(28, 96%, 56%); color: hsl(32, 100%, 78%);">涅槃待命</span>');
   }
-  if (hasBerserkRush) {
-    pills.push('<span class="buff-pill" style="border-color: hsl(356, 88%, 58%); color: hsl(356, 96%, 76%);">极速猎手 ×2</span>');
+  if (hasStarfallResonance) {
+    pills.push('<span class="buff-pill" style="border-color: hsl(42, 98%, 56%); color: hsl(44, 100%, 78%);">✦ 星陨共鸣</span>');
   }
-  if (treasureSenseLevel > 0) {
-    pills.push(`<span class="buff-pill" style="border-color: hsl(43, 88%, 54%); color: hsl(45, 96%, 74%);">寻宝 Lv.${treasureSenseLevel}</span>`);
+
+  const staticPassives = [];
+  if (magnetLevel > 0) staticPassives.push(`磁力 Lv.${magnetLevel}`);
+  if (blastExpertLevel > 0) staticPassives.push('爆破专家');
+  if (hasGreedyMaw) staticPassives.push('狂暴胃口');
+  if (hasBerserkRush) staticPassives.push('极速猎手');
+  if (treasureSenseLevel > 0) staticPassives.push(`寻宝 Lv.${treasureSenseLevel}`);
+  if (emergencyArmorLevel > 0) staticPassives.push(`护甲 Lv.${emergencyArmorLevel}`);
+
+  if (staticPassives.length === 1) {
+    pills.push(`<span class="buff-pill" style="border-color: hsla(150, 14%, 44%, 0.7); color: hsl(42, 24%, 82%);">${staticPassives[0]}</span>`);
+  } else if (staticPassives.length > 1) {
+    pills.push(`<span class="buff-pill" title="${staticPassives.join(' · ')}（暂停界面可查看全部已选强化）" style="border-color: hsla(150, 14%, 44%, 0.7); color: hsl(42, 24%, 82%);">被动 +${staticPassives.length}</span>`);
   }
-  if (emergencyArmorLevel > 0) {
-    pills.push(`<span class="buff-pill" style="border-color: hsl(206, 82%, 58%); color: hsl(206, 94%, 78%);">护甲 Lv.${emergencyArmorLevel}</span>`);
-  }
+
   buffBarEl.innerHTML = pills.length > 0
     ? pills.join('')
     : '<span class="buff-empty">状态：暂无限时增益</span>';
@@ -1515,7 +1657,23 @@ function spawnPowerUp() {
     }
   }
 
-  const pos = cells[Math.floor(Math.random() * cells.length)];
+  // 「疾速秘宝」词缀下停留时间缩短，优先在距蛇头曼哈顿距离 ≤16 格内刷新，避免刷在对角线必过期
+  let spawnPool = cells;
+  if (activeMutator === 'swift_loot' && snake.length > 0) {
+    const head = snake[0];
+    const nearPreferred = cells.filter((c) => {
+      const dist = Math.abs(c.x - head.x) + Math.abs(c.y - head.y);
+      return dist >= 3 && dist <= 16;
+    });
+    if (nearPreferred.length > 0) {
+      spawnPool = nearPreferred;
+    } else {
+      const within16 = cells.filter((c) => Math.abs(c.x - head.x) + Math.abs(c.y - head.y) <= 16);
+      if (within16.length > 0) spawnPool = within16;
+    }
+  }
+
+  const pos = spawnPool[Math.floor(Math.random() * spawnPool.length)];
   const rawTtl = 9.5 + buffBonusSec;
   const itemTtl = activeMutator === 'swift_loot' ? +(rawTtl * 0.65).toFixed(1) : rawTtl;
 
@@ -1527,6 +1685,14 @@ function spawnPowerUp() {
     ttl: itemTtl,
     maxTtl: itemTtl
   };
+}
+
+function addPendingGrowth(amount) {
+  if (amount <= 0) return;
+  const room = Math.max(0, MAX_SNAKE_LENGTH - snake.length - pendingGrowth);
+  if (room > 0) {
+    pendingGrowth += Math.min(amount, room);
+  }
 }
 
 function spawnBurst(gridX, gridY, hslColor, count = 10) {
@@ -1608,7 +1774,7 @@ function applyPowerUp(item) {
     const comboBonus = registerComboBonus();
     const pts = calcDoublePts(Math.round(30 * scoreMultiplier * starFruitMult) + comboBonus + treasureBonus);
     score += pts;
-    pendingGrowth += 2;
+    addPendingGrowth(2);
     spawnBurst(item.x, item.y, '43, 96%, 58%', 14);
     addFloatingText(item.x, item.y, `+${pts} 金色果实!`, 'hsl(43, 96%, 64%)');
   } else if (item.type === 'double') {
@@ -1621,7 +1787,7 @@ function applyPowerUp(item) {
     playTone('powerup');
     score += calcDoublePts(10 + treasureBonus);
     iceTimer = Math.max(iceTimer, POWERUP_TYPES.ice.duration + buffBonusSec);
-    pendingGrowth += 1;
+    addPendingGrowth(1);
     spawnBurst(item.x, item.y, '196, 90%, 64%', 12);
     addFloatingText(item.x, item.y, '寒冰减速!', 'hsl(196, 92%, 72%)');
   } else if (item.type === 'shield') {
@@ -1632,7 +1798,7 @@ function applyPowerUp(item) {
       ? rawShieldDur * 0.5
       : rawShieldDur;
     shieldTimer = Math.max(shieldTimer, shieldDur);
-    pendingGrowth += 1;
+    addPendingGrowth(1);
     spawnBurst(item.x, item.y, '164, 85%, 56%', 12);
     addFloatingText(item.x, item.y, '穿墙碎石护盾!', 'hsl(164, 90%, 66%)');
   } else if (item.type === 'bomb') {
@@ -1747,6 +1913,33 @@ function takeDamage(hitX, hitY, cause = 'wall') {
   return true;
 }
 
+// 撞墙后自动选择最安全的顺墙垂直方向，避免蛇头原地卡死连吃二次撞墙伤
+function pickWallAutoTurn(head, curDir) {
+  const perpDirs = [
+    { x: -curDir.y, y: curDir.x },
+    { x: curDir.y, y: -curDir.x }
+  ];
+  let bestDir = null;
+  let bestScore = -Infinity;
+  const center = (GRID_COUNT - 1) / 2;
+
+  for (const d of perpDirs) {
+    const nx = head.x + d.x;
+    const ny = head.y + d.y;
+    if (nx < 0 || nx >= GRID_COUNT || ny < 0 || ny >= GRID_COUNT) continue;
+    let candidateScore = 0;
+    if (!isObstacleAt(nx, ny, true)) candidateScore += 100;
+    if (!isSnakeAt(nx, ny)) candidateScore += 100;
+    candidateScore += countOpenNeighbors(nx, ny) * 5;
+    candidateScore -= Math.abs(nx - center) + Math.abs(ny - center);
+    if (candidateScore > bestScore) {
+      bestScore = candidateScore;
+      bestDir = d;
+    }
+  }
+  return bestDir || curDir;
+}
+
 function stepGame() {
   if (directionQueue.length > 0) {
     direction = directionQueue.shift();
@@ -1756,15 +1949,17 @@ function stepGame() {
   let nextX = head.x + direction.x;
   let nextY = head.y + direction.y;
 
-  // 1. 边界检测：仅护盾状态可穿墙；无护盾撞墙停在原地并扣血触发短暂无敌
+  // 1. 边界检测：护盾状态穿墙；无护盾撞墙扣血并自动顺墙转向，避免原地卡死连续受击
   if (nextX < 0 || nextX >= GRID_COUNT || nextY < 0 || nextY >= GRID_COUNT) {
     if (shieldTimer > 0) {
       nextX = (nextX + GRID_COUNT) % GRID_COUNT;
       nextY = (nextY + GRID_COUNT) % GRID_COUNT;
     } else {
       if (invulnTimer <= 0) {
-        takeDamage(head.x, head.y, 'wall');
+        if (!takeDamage(head.x, head.y, 'wall')) return;
       }
+      direction = pickWallAutoTurn(head, direction);
+      directionQueue = [];
       return;
     }
   }
@@ -1801,25 +1996,34 @@ function stepGame() {
       registerRocksSmashed(1);
       spawnBurst(rock.x, rock.y, '32, 18%, 62%', 10);
       if (!takeDamage(nextX, nextY, 'rock')) return;
+    } else {
+      // 无敌保护期间撞到岩石：直接震碎开路（不扣血、不计分），避免无敌结束瞬间卡死在石堆中
+      const rock = obstacles[hitRockIndex];
+      obstacles.splice(hitRockIndex, 1);
+      spawnBurst(rock.x, rock.y, '32, 18%, 62%', 8);
+      playTone('smash');
     }
   }
 
-  const pickupRadius = magnetLevel > 0 ? 1 : 0;
+  const foodPickupRadius = magnetLevel > 0 ? 1 : 0;
+  const itemPickupRadius = magnetLevel >= 2 ? 2 : (magnetLevel > 0 ? 1 : 0);
   const willEatFood = Boolean(
     food &&
-    Math.abs(nextX - food.x) <= pickupRadius &&
-    Math.abs(nextY - food.y) <= pickupRadius
+    Math.abs(nextX - food.x) <= foodPickupRadius &&
+    Math.abs(nextY - food.y) <= foodPickupRadius
   );
   const willEatPowerUp = Boolean(
     powerUp &&
-    Math.abs(nextX - powerUp.x) <= pickupRadius &&
-    Math.abs(nextY - powerUp.y) <= pickupRadius
+    Math.abs(nextX - powerUp.x) <= itemPickupRadius &&
+    Math.abs(nextY - powerUp.y) <= itemPickupRadius
   );
-  const willGrowThisStep = willEatFood || pendingGrowth > 0;
+  const canGrowByCap = snake.length < MAX_SNAKE_LENGTH;
+  const willGrowThisStep = canGrowByCap && (willEatFood || pendingGrowth > 0);
 
   // 3. 撞自身检测（无敌或幽灵相位期间免伤；若持有「相位穿身」且冷却就绪，自动免伤并触发 2s 幽灵脱困）
   const bodyToCheck = willGrowThisStep ? snake : snake.slice(0, -1);
-  if (bodyToCheck.some((seg) => seg.x === nextX && seg.y === nextY)) {
+  const isOverlappingSelf = bodyToCheck.some((seg) => seg.x === nextX && seg.y === nextY);
+  if (isOverlappingSelf) {
     if (invulnTimer > 0 || ghostTimer > 0) {
       // 已有无敌或幽灵穿身状态：直接穿过，不消耗相位护体充能
     } else if (hasPhaseBody && phaseBodyCooldown <= 0) {
@@ -1834,7 +2038,7 @@ function stepGame() {
     }
   }
 
-  // 4. 推进蛇头
+  // 4. 推进蛇头（限制最大蛇长且在穿身叠格步不叠加蛇节，防止无尽模式蛇身膨胀叠格）
   snake.unshift({ x: nextX, y: nextY });
 
   if (willEatFood) {
@@ -1844,9 +2048,17 @@ function stepGame() {
     const starFruitMult = hasStarfallResonance ? 1.3 : 1;
     const pts = calcDoublePts(Math.round(baseFoodPts * scoreMultiplier * starFruitMult) + comboBonus);
     score += pts;
-    if (extraFoodGrowth > 0) {
-      pendingGrowth += extraFoodGrowth;
+
+    if (!canGrowByCap) {
+      snake.pop();
+      pendingGrowth = 0;
+    } else if (isOverlappingSelf) {
+      snake.pop();
+      addPendingGrowth(1 + extraFoodGrowth);
+    } else if (extraFoodGrowth > 0) {
+      addPendingGrowth(extraFoodGrowth);
     }
+
     playTone('eat');
     spawnBurst(food.x, food.y, '16, 90%, 62%', 10);
     if (comboBonus > 0) {
@@ -1863,11 +2075,14 @@ function stepGame() {
       return;
     }
     spawnFood();
-  } else if (pendingGrowth > 0) {
+  } else if (pendingGrowth > 0 && canGrowByCap && !isOverlappingSelf) {
     pendingGrowth--;
     updateHUD();
   } else {
     snake.pop();
+    if (!canGrowByCap) {
+      pendingGrowth = 0;
+    }
   }
 
   if (state === 'running' && willEatPowerUp && powerUp) {
@@ -1938,6 +2153,7 @@ function updateTimers(dtSeconds) {
     bannerTimer = Math.max(0, bannerTimer - dtSeconds);
     if (bannerTimer === 0) {
       levelBannerEl.classList.add('hidden');
+      levelBannerEl.classList.remove('mutator');
     }
   }
 
@@ -2065,6 +2281,8 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     if (state === 'idle') {
       startGame();
+    } else if (state === 'paused' && isPostUpgradeReady) {
+      togglePause();
     }
     queueDirection(mappedDir);
     return;
@@ -2109,6 +2327,25 @@ endlessBtn.addEventListener('click', continueEndlessMode);
 shareBtn.addEventListener('click', copyShareStats);
 pauseBtn.addEventListener('click', togglePause);
 
+if (itemLegendEl) {
+  itemLegendEl.addEventListener('click', (e) => {
+    const target = e && e.target;
+    const chip = target && typeof target.closest === 'function' ? target.closest('[data-item]') : null;
+    if (chip && chip.dataset && chip.dataset.item) {
+      showLegendPopover(chip.dataset.item);
+    }
+  });
+}
+
+document.addEventListener('click', (e) => {
+  if (!activeLegendItem) return;
+  const target = e && e.target;
+  if (target && typeof target.closest === 'function' && (target.closest('#item-legend') || target.closest('#legend-popover'))) {
+    return;
+  }
+  hideLegendPopover();
+});
+
 muteBtn.addEventListener('click', () => {
   soundEnabled = !soundEnabled;
   muteBtn.textContent = soundEnabled ? '音效: 开' : '音效: 关';
@@ -2120,6 +2357,7 @@ function bindDpadButton(id, dir) {
     e.preventDefault();
     if (state === 'choosing') return;
     if (state === 'idle') startGame();
+    else if (state === 'paused' && isPostUpgradeReady) togglePause();
     queueDirection(dir);
   });
 }
@@ -2141,8 +2379,19 @@ function isTouchControlTarget(target) {
   );
 }
 
+function canSwipeSteer() {
+  return state === 'running' || (state === 'paused' && isPostUpgradeReady);
+}
+
+function applySwipeDirection(dir) {
+  if (state === 'paused' && isPostUpgradeReady) {
+    togglePause();
+  }
+  queueDirection(dir);
+}
+
 document.addEventListener('touchstart', (e) => {
-  if (state !== 'running' || e.touches.length !== 1 || isTouchControlTarget(e.target)) {
+  if (!canSwipeSteer() || e.touches.length !== 1 || isTouchControlTarget(e.target)) {
     touchStart = null;
     touchSwiped = false;
     return;
@@ -2155,7 +2404,7 @@ document.addEventListener('touchstart', (e) => {
 }, { passive: true });
 
 document.addEventListener('touchmove', (e) => {
-  if (state !== 'running') return;
+  if (!canSwipeSteer()) return;
   if (!isTouchControlTarget(e.target)) {
     e.preventDefault();
   }
@@ -2169,9 +2418,9 @@ document.addEventListener('touchmove', (e) => {
   if (Math.max(Math.abs(dx), Math.abs(dy)) < SWIPE_THRESHOLD) return;
 
   if (Math.abs(dx) > Math.abs(dy)) {
-    queueDirection(dx > 0 ? { x: 1, y: 0 } : { x: -1, y: 0 });
+    applySwipeDirection(dx > 0 ? { x: 1, y: 0 } : { x: -1, y: 0 });
   } else {
-    queueDirection(dy > 0 ? { x: 0, y: 1 } : { x: 0, y: -1 });
+    applySwipeDirection(dy > 0 ? { x: 0, y: 1 } : { x: 0, y: -1 });
   }
   // 重置滑动锚点，支持不抬手连续拐弯且划出场地外依然稳定响应
   touchStart = { x: curX, y: curY };
@@ -2179,14 +2428,14 @@ document.addEventListener('touchmove', (e) => {
 }, { passive: false });
 
 document.addEventListener('touchend', (e) => {
-  if (state === 'running' && touchStart && !touchSwiped && e.changedTouches.length > 0) {
+  if (canSwipeSteer() && touchStart && !touchSwiped && e.changedTouches.length > 0) {
     const dx = e.changedTouches[0].clientX - touchStart.x;
     const dy = e.changedTouches[0].clientY - touchStart.y;
     if (Math.max(Math.abs(dx), Math.abs(dy)) >= SWIPE_THRESHOLD) {
       if (Math.abs(dx) > Math.abs(dy)) {
-        queueDirection(dx > 0 ? { x: 1, y: 0 } : { x: -1, y: 0 });
+        applySwipeDirection(dx > 0 ? { x: 1, y: 0 } : { x: -1, y: 0 });
       } else {
-        queueDirection(dy > 0 ? { x: 0, y: 1 } : { x: 0, y: -1 });
+        applySwipeDirection(dy > 0 ? { x: 0, y: 1 } : { x: 0, y: -1 });
       }
     }
   }
