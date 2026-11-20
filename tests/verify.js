@@ -207,6 +207,7 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     getPowerUpWeight,
     registerRocksSmashed,
     applyPowerUp,
+    takeDamage,
     getMaxObstacles,
     getPowerUpCooldown,
     isPowerUpEligible,
@@ -233,6 +234,7 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
       rocksSmashed, runElapsedSec, pickedUpgrades, pendingUpgradeLevels,
       blastExpertLevel, hasStoneFeast, stoneFeastProgress,
       hasGreedyMaw, extraFoodGrowth, hasBerserkRush,
+      treasureSenseLevel, emergencyArmorLevel,
       damageStats, lastHitCause, rockDripTimer, foodMoveTimer
     })),
     spawnPowerUp,
@@ -263,6 +265,8 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
       if (patch.hasGreedyMaw !== undefined) hasGreedyMaw = patch.hasGreedyMaw;
       if (patch.extraFoodGrowth !== undefined) extraFoodGrowth = patch.extraFoodGrowth;
       if (patch.hasBerserkRush !== undefined) hasBerserkRush = patch.hasBerserkRush;
+      if (patch.treasureSenseLevel !== undefined) treasureSenseLevel = patch.treasureSenseLevel;
+      if (patch.emergencyArmorLevel !== undefined) emergencyArmorLevel = patch.emergencyArmorLevel;
       if (patch.comboUpgradeLevel !== undefined) comboUpgradeLevel = patch.comboUpgradeLevel;
       if (patch.comboCount !== undefined) comboCount = patch.comboCount;
       if (patch.comboTimer !== undefined) comboTimer = patch.comboTimer;
@@ -459,8 +463,8 @@ for (let i = 0; i < 100; i++) {
   prevType = spawnedType;
 }
 
-// 6. 校验 16 张强化词条池（含 2 张双刃卡）、传说稀有度权重（稀有的一半）及核心数值
-assert.strictEqual(g.UPGRADE_POOL.length, 16, '词条池应扩展为 16 项（含 2 张双刃卡）');
+// 6. 校验 18 张强化词条池（8 普 / 5 罕 / 4 稀 / 1 传，含 2 张双刃卡）、传说稀有度权重（稀有的一半）及核心数值
+assert.strictEqual(g.UPGRADE_POOL.length, 18, '词条池应扩展为 18 项（8 普 / 5 罕 / 4 稀 / 1 传）');
 assert.strictEqual(g.RARITY_CONFIG.legendary.weight * 2, g.RARITY_CONFIG.rare.weight, '传说稀有度单卡权重应为稀有的一半');
 assert(
   g.RARITY_CONFIG.legendary.weight < g.RARITY_CONFIG.rare.weight &&
@@ -473,7 +477,7 @@ assert(
 g.startGame();
 g.setTestState({ snake: Array.from({ length: 8 }, (_, i) => ({ x: 10 - i, y: 10 })) });
 const pickCounts = { common: 0, uncommon: 0, rare: 0, legendary: 0 };
-const cardPoolCounts = { common: 5, uncommon: 6, rare: 4, legendary: 1 };
+const cardPoolCounts = { common: 8, uncommon: 5, rare: 4, legendary: 1 };
 for (let i = 0; i < 6000; i++) {
   for (const c of g.pickWeightedUpgrades(3)) {
     pickCounts[c.rarity]++;
@@ -570,7 +574,7 @@ g.startGame();
 g.registerRocksSmashed(30);
 assert.strictEqual(g.getSnapshot().stoneFeastProgress, 0, '未持有卡牌时不累计进度');
 
-// 校验「强健体魄」罕见、「圣盾赐福」罕见、「延时充能」+2s、「从容步伐」叠加上限 2 次、「碎石冲击」震碎 70%
+// 校验「强健体魄」罕见、「圣盾赐福」罕见、「延时充能」降为普通且 +1.5s、「寻宝嗅觉」「应急护甲」普通卡
 assert.strictEqual(g.SPEED_GAIN_PER_LEVEL, 0.04, '每级速度提升应为 0.04');
 assert.strictEqual(g.SLOW_UPGRADE_STEP, 0.2, '从容步伐每次应降低 0.2 速度倍率');
 assert.strictEqual(g.COMBO_WINDOW, 5.0, '连击初始维持时间窗口应为 5.0s');
@@ -578,14 +582,62 @@ assert.strictEqual(g.UPGRADE_POOL.find((u) => u.id === 'max_hp').rarity, 'uncomm
 assert.strictEqual(g.UPGRADE_POOL.find((u) => u.id === 'instant_aegis').rarity, 'uncommon', '圣盾赐福稀有度应改为罕见');
 
 const buffExtendCard = g.UPGRADE_POOL.find((u) => u.id === 'buff_extend');
-assert(buffExtendCard.getDesc().includes('+2 秒'), '延时充能描述应为 +2 秒');
+assert.strictEqual(buffExtendCard.rarity, 'common', '延时充能应降级为普通卡');
+assert(buffExtendCard.getDesc().includes('+1.5 秒'), '延时充能描述应为 +1.5 秒');
 g.startGame();
 buffExtendCard.apply();
-assert.strictEqual(g.getSnapshot().buffBonusSec, 2, '延时充能单次应增加 2 秒增益时长');
+assert.strictEqual(g.getSnapshot().buffBonusSec, 1.5, '延时充能单次应增加 1.5 秒增益时长');
 buffExtendCard.apply();
 buffExtendCard.apply();
-assert.strictEqual(g.getSnapshot().buffBonusSec, 6, '延时充能叠满 3 次应为 6 秒');
+assert.strictEqual(g.getSnapshot().buffBonusSec, 4.5, '延时充能叠满 3 次应为 4.5 秒');
 assert.strictEqual(buffExtendCard.canPick(), false, '延时充能叠满 3 次后不可继续抽取');
+
+// 寻宝嗅觉：普通卡，最多 2 次，缩短道具刷新 15%/30%，拾取道具额外 +8/+16 分
+const treasureCard = g.UPGRADE_POOL.find((u) => u.id === 'treasure_sense');
+assert.strictEqual(treasureCard.rarity, 'common', '寻宝嗅觉应为普通卡');
+g.startGame();
+assert.strictEqual(g.getPowerUpCooldown(), 4.8);
+treasureCard.apply();
+assert.strictEqual(g.getSnapshot().treasureSenseLevel, 1);
+assert.strictEqual(g.getPowerUpCooldown(), +(4.8 * 0.85).toFixed(2), '寻宝嗅觉 Lv.1 应缩短道具刷新间隔 15%');
+g.setTestState({ score: 0, doubleTimer: 0 });
+g.applyPowerUp({ x: 10, y: 10, type: 'ice' });
+assert.strictEqual(g.getSnapshot().score, 10 + 8, '寻宝嗅觉 Lv.1 拾取道具应额外 +8 分');
+treasureCard.apply();
+assert.strictEqual(g.getSnapshot().treasureSenseLevel, 2);
+assert.strictEqual(treasureCard.canPick(), false, '寻宝嗅觉最多叠加 2 次');
+assert.strictEqual(g.getPowerUpCooldown(), +(4.8 * 0.70).toFixed(2), '寻宝嗅觉 Lv.2 应缩短道具刷新间隔 30%');
+g.setTestState({ score: 0, doubleTimer: 5 });
+g.applyPowerUp({ x: 10, y: 10, type: 'scissors' });
+assert.strictEqual(g.getSnapshot().score, (15 + 16) * 2, '寻宝嗅觉 Lv.2 额外 +16 分应受双倍得分加成');
+
+// 应急护甲：普通卡，最多 2 次，无敌 +1s/级，非致命受击震碎 3x3 / 5x5 岩石
+const armorCard = g.UPGRADE_POOL.find((u) => u.id === 'emergency_armor');
+assert.strictEqual(armorCard.rarity, 'common', '应急护甲应为普通卡');
+g.startGame();
+armorCard.apply();
+assert.strictEqual(g.getSnapshot().emergencyArmorLevel, 1);
+g.setTestState({
+  lives: 3,
+  obstacles: [
+    { x: 11, y: 10, warnTimer: 0 }, // 距离 1 -> 3x3 内
+    { x: 12, y: 10, warnTimer: 0 }, // 距离 2 -> 3x3 外、5x5 内
+    { x: 0, y: 0, warnTimer: 0 }    // 远处
+  ]
+});
+g.takeDamage(10, 10, 'wall');
+let armorSnap = g.getSnapshot();
+assert.strictEqual(armorSnap.lives, 2);
+assert.strictEqual(armorSnap.invulnTimer, 3.0, '应急护甲 Lv.1 受伤后无敌应为 3.0s');
+assert.strictEqual(armorSnap.obstacles.length, 2, '应急护甲 Lv.1 应震碎周围 3x3 岩石');
+assert.strictEqual(armorSnap.rocksSmashed, 1, '护甲震碎岩石应计入碎石统计');
+armorCard.apply();
+assert.strictEqual(armorCard.canPick(), false, '应急护甲最多叠加 2 次');
+g.takeDamage(10, 10, 'wall');
+armorSnap = g.getSnapshot();
+assert.strictEqual(armorSnap.lives, 1);
+assert.strictEqual(armorSnap.invulnTimer, 4.0, '应急护甲 Lv.2 受伤后无敌应为 4.0s');
+assert.strictEqual(armorSnap.obstacles.length, 1, '应急护甲 Lv.2 应震碎周围 5x5 岩石');
 
 const scoreCard = g.UPGRADE_POOL.find((u) => u.id === 'score_boost');
 assert(scoreCard.getDesc().includes('+50%'), '黄金胃口描述应为 +50%');
@@ -970,10 +1022,10 @@ g.setTestState({ score: g.getScoreForLevel(4) });
 g.checkLevelUp();
 assert.deepStrictEqual(g.getSnapshot().pendingUpgradeLevels, [], '升至 Lv.4 不再触发旧版 4 关强化');
 
-// 11c. 【延时充能】每层都延长场上道具停留时间（9.5s -> 11.5s -> 13.5s -> 15.5s）
+// 11c. 【延时充能】每层延长场上道具停留时间 +1.5s（9.5s -> 11.0s -> 12.5s -> 14.0s）
 g.startGame();
-for (const [stacks, expectedTtl] of [[0, 9.5], [1, 11.5], [2, 13.5], [3, 15.5]]) {
-  g.setTestState({ buffBonusSec: stacks * 2, powerUp: null });
+for (const [stacks, expectedTtl] of [[0, 9.5], [1, 11.0], [2, 12.5], [3, 14.0]]) {
+  g.setTestState({ buffBonusSec: +(stacks * 1.5).toFixed(1), powerUp: null });
   g.spawnPowerUp();
   assert.strictEqual(g.getSnapshot().powerUp.maxTtl, expectedTtl, `延时充能 ${stacks} 层时场上道具停留时间应为 ${expectedTtl}s`);
 }

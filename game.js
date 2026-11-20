@@ -94,6 +94,8 @@ let stoneFeastProgress = 0;   // 「以石养身」当前累计碎石进度
 let hasGreedyMaw = false;     // 双刃卡「狂暴胃口」
 let extraFoodGrowth = 0;      // 每次吃普通苹果额外增加的蛇身节数
 let hasBerserkRush = false;   // 双刃卡「极速猎手」
+let treasureSenseLevel = 0;   // 「寻宝嗅觉」层数（0~2）
+let emergencyArmorLevel = 0;  // 「应急护甲」层数（0~2）
 
 let pendingUpgradeLevels = []; // Array<number | 'chest'>
 let currentChoices = [];
@@ -249,12 +251,41 @@ const UPGRADE_POOL = [
   {
     id: 'buff_extend',
     name: '延时充能',
-    rarity: 'uncommon',
-    getDesc: () => '护盾、寒冰、双倍、幽灵持续时间及场上道具停留时间每层均永久 +2 秒',
-    canPick: () => buffBonusSec < 6,
+    rarity: 'common',
+    getDesc: () => '护盾、寒冰、双倍、幽灵持续时间及场上道具停留时间每层均永久 +1.5 秒',
+    canPick: () => buffBonusSec < 4.5,
     apply: () => {
-      buffBonusSec += 2;
-      addFloatingText(snake[0].x, snake[0].y, '增益与停留 +2s!', 'hsl(206, 95%, 76%)');
+      buffBonusSec = +(buffBonusSec + 1.5).toFixed(1);
+      addFloatingText(snake[0].x, snake[0].y, '增益与停留 +1.5s!', 'hsl(206, 95%, 76%)');
+    }
+  },
+  {
+    id: 'treasure_sense',
+    name: '寻宝嗅觉',
+    rarity: 'common',
+    getDesc: () => treasureSenseLevel === 0
+      ? '场上道具刷新间隔缩短 15%，且拾取任意道具额外 +8 分'
+      : '场上道具刷新间隔共缩短 30%，且拾取任意道具额外 +16 分',
+    canPick: () => treasureSenseLevel < 2,
+    apply: () => {
+      treasureSenseLevel += 1;
+      if (!powerUp) {
+        powerUpCooldown = Math.min(powerUpCooldown, getPowerUpCooldown());
+      }
+      addFloatingText(snake[0].x, snake[0].y, `寻宝嗅觉 Lv.${treasureSenseLevel}!`, 'hsl(43, 96%, 68%)');
+    }
+  },
+  {
+    id: 'emergency_armor',
+    name: '应急护甲',
+    rarity: 'common',
+    getDesc: () => emergencyArmorLevel === 0
+      ? '受伤后无敌时间永久 +1 秒，且受击瞬间自动震碎蛇头周围 3×3 岩石'
+      : '受伤后无敌时间再 +1 秒，且受击自动震碎范围扩大至 5×5 岩石',
+    canPick: () => emergencyArmorLevel < 2,
+    apply: () => {
+      emergencyArmorLevel += 1;
+      addFloatingText(snake[0].x, snake[0].y, `应急护甲 Lv.${emergencyArmorLevel}!`, 'hsl(206, 88%, 74%)');
     }
   },
   {
@@ -390,8 +421,9 @@ function getEffectiveInterval() {
 }
 
 function getPowerUpCooldown() {
-  const factor = magnetLevel === 0 ? 1 : (magnetLevel === 1 ? 0.75 : 0.56);
-  return 4.8 * factor;
+  const magnetFactor = magnetLevel === 0 ? 1 : (magnetLevel === 1 ? 0.75 : 0.56);
+  const treasureFactor = 1 - treasureSenseLevel * 0.15;
+  return +(4.8 * magnetFactor * treasureFactor).toFixed(2);
 }
 
 function isObstacleAt(x, y, solidOnly = false) {
@@ -813,6 +845,8 @@ function initGameData() {
   hasGreedyMaw = false;
   extraFoodGrowth = 0;
   hasBerserkRush = false;
+  treasureSenseLevel = 0;
+  emergencyArmorLevel = 0;
 
   pendingUpgradeLevels = [];
   currentChoices = [];
@@ -1198,6 +1232,12 @@ function renderBuffBar() {
   if (hasBerserkRush) {
     pills.push('<span class="buff-pill" style="border-color: hsl(356, 88%, 58%); color: hsl(356, 96%, 76%);">极速猎手 ×2</span>');
   }
+  if (treasureSenseLevel > 0) {
+    pills.push(`<span class="buff-pill" style="border-color: hsl(43, 88%, 54%); color: hsl(45, 96%, 74%);">寻宝 Lv.${treasureSenseLevel}</span>`);
+  }
+  if (emergencyArmorLevel > 0) {
+    pills.push(`<span class="buff-pill" style="border-color: hsl(206, 82%, 58%); color: hsl(206, 94%, 78%);">护甲 Lv.${emergencyArmorLevel}</span>`);
+  }
   buffBarEl.innerHTML = pills.length > 0
     ? pills.join('')
     : '<span class="buff-empty">状态：暂无限时增益</span>';
@@ -1404,37 +1444,38 @@ function applyPowerUp(item) {
   hitstopTimer = HITSTOP_DURATION;
   triggerHaptic(18);
   let triggerChestModal = false;
+  const treasureBonus = 8 * treasureSenseLevel;
 
   if (item.type === 'heart') {
     playTone('heal');
     lives = Math.min(maxLives, lives + 1);
-    score += calcDoublePts(10);
+    score += calcDoublePts(10 + treasureBonus);
     spawnBurst(item.x, item.y, '345, 92%, 64%', 14);
     addFloatingText(item.x, item.y, '+1 生命!', 'hsl(345, 96%, 74%)');
   } else if (item.type === 'gold') {
     playTone('powerup');
     const comboBonus = registerComboBonus();
-    const pts = calcDoublePts(Math.round(30 * scoreMultiplier) + comboBonus);
+    const pts = calcDoublePts(Math.round(30 * scoreMultiplier) + comboBonus + treasureBonus);
     score += pts;
     pendingGrowth += 2;
     spawnBurst(item.x, item.y, '43, 96%, 58%', 14);
     addFloatingText(item.x, item.y, `+${pts} 金色果实!`, 'hsl(43, 96%, 64%)');
   } else if (item.type === 'double') {
     playTone('powerup');
-    score += calcDoublePts(10);
+    score += calcDoublePts(10 + treasureBonus);
     doubleTimer = Math.max(doubleTimer, POWERUP_TYPES.double.duration + buffBonusSec);
     spawnBurst(item.x, item.y, '39, 96%, 45%', 15);
     addFloatingText(item.x, item.y, '双倍得分!', 'hsl(42, 98%, 62%)');
   } else if (item.type === 'ice') {
     playTone('powerup');
-    score += calcDoublePts(10);
+    score += calcDoublePts(10 + treasureBonus);
     iceTimer = Math.max(iceTimer, POWERUP_TYPES.ice.duration + buffBonusSec);
     pendingGrowth += 1;
     spawnBurst(item.x, item.y, '196, 90%, 64%', 12);
     addFloatingText(item.x, item.y, '寒冰减速!', 'hsl(196, 92%, 72%)');
   } else if (item.type === 'shield') {
     playTone('powerup');
-    score += calcDoublePts(10);
+    score += calcDoublePts(10 + treasureBonus);
     const rawShieldDur = POWERUP_TYPES.shield.duration + buffBonusSec;
     const shieldDur = activeMutator === 'fragile_aegis'
       ? rawShieldDur * 0.5
@@ -1447,7 +1488,7 @@ function applyPowerUp(item) {
     playTone('bomb');
     const cleared = clearObstaclesNear(snake[0].x, snake[0].y, 5);
     const expertBonus = 5 * blastExpertLevel * (hasBerserkRush ? 2 : 1);
-    const pts = calcDoublePts(10 + cleared * (getRockSmashBasePts() + expertBonus));
+    const pts = calcDoublePts(10 + cleared * (getRockSmashBasePts() + expertBonus) + treasureBonus);
     score += pts;
     shakeTimer = Math.max(shakeTimer, 0.2);
     triggerHaptic([25, 20, 35]);
@@ -1463,19 +1504,19 @@ function applyPowerUp(item) {
     const targetLen = Math.max(3, snake.length - 5);
     const removed = snake.splice(targetLen);
     pendingGrowth = 0;
-    score += calcDoublePts(15);
+    score += calcDoublePts(15 + treasureBonus);
     removed.forEach((seg) => spawnBurst(seg.x, seg.y, '220, 88%, 58%', 5));
     spawnBurst(item.x, item.y, '220, 88%, 58%', 12);
     addFloatingText(item.x, item.y, `剪短 -${removed.length} 节!`, 'hsl(220, 92%, 70%)');
   } else if (item.type === 'ghost') {
     playTone('powerup');
-    score += calcDoublePts(10);
+    score += calcDoublePts(10 + treasureBonus);
     ghostTimer = Math.max(ghostTimer, POWERUP_TYPES.ghost.duration + buffBonusSec);
     spawnBurst(item.x, item.y, '258, 90%, 76%', 14);
     addFloatingText(item.x, item.y, '幽灵穿身!', 'hsl(258, 95%, 82%)');
   } else if (item.type === 'chest') {
     playTone('upgrade');
-    score += calcDoublePts(20);
+    score += calcDoublePts(20 + treasureBonus);
     triggerChestModal = true;
     spawnBurst(item.x, item.y, '32, 98%, 60%', 18);
     addFloatingText(item.x, item.y, '🎁 开启神秘宝箱!', 'hsl(34, 100%, 74%)');
@@ -1526,11 +1567,19 @@ function takeDamage(hitX, hitY, cause = 'wall') {
     return false;
   }
 
+  const armorCleared = emergencyArmorLevel > 0
+    ? clearObstaclesNear(hitX, hitY, emergencyArmorLevel)
+    : 0;
   updateHUD();
-  invulnTimer = INVULN_DURATION;
+  invulnTimer = INVULN_DURATION + emergencyArmorLevel * 1.0;
   playTone('hurt');
   spawnBurst(hitX, hitY, '356, 92%, 60%', 12);
-  addFloatingText(hitX, hitY, `-1 生命 (余${lives})`, 'hsl(356, 96%, 70%)');
+  addFloatingText(
+    hitX,
+    hitY,
+    armorCleared > 0 ? `-1 生命 · 护甲清${armorCleared}石` : `-1 生命 (余${lives})`,
+    'hsl(356, 96%, 70%)'
+  );
   renderBuffBar();
   return true;
 }
