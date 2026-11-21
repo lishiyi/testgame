@@ -1764,7 +1764,20 @@ assert(env.getEl('mode-hard-btn').textContent.includes('🏅'), '困难通关后
     assert(sampleBanner.length <= 38, `词缀 ${k} 横幅文案应精简至 38 字内，实际 ${sampleBanner.length} 字：${sampleBanner}`);
   }
 
+  // 16f. 手机端 UI 标题长度（≤6 字）、模式徽章不换行与生命/得分下移至关卡/最高行之后
+  const h1Match = indexHtml.match(/<h1>([^<]+)<\/h1>/);
+  assert(h1Match && h1Match[1].trim().length <= 6, `主标题应在 6 字以内，实际为：${h1Match && h1Match[1]}`);
+  assert(/\.mode-badge\s*\{[\s\S]*?white-space:\s*nowrap;[\s\S]*?flex-shrink:\s*0;/.test(indexCss), '.mode-badge 必须设置 white-space: nowrap 与 flex-shrink: 0 防止折成两行');
+  const levelStatIdx = indexHtml.indexOf('id="level-value"');
+  const bestStatIdx = indexHtml.indexOf('id="best-score-value"');
+  const livesStatIdx = indexHtml.indexOf('id="lives-value"');
+  const scoreStatIdx = indexHtml.indexOf('id="score-value"');
+  assert(
+    levelStatIdx > 0 && bestStatIdx > levelStatIdx && livesStatIdx > bestStatIdx && scoreStatIdx > livesStatIdx,
+    '计分板中生命值与当前得分应排在当前关卡与最高纪录之后（手机 2×2 布局下位于更靠近棋盘的下方行）'
+  );
+
   g.gameLoop(1500);
   assert.strictEqual(env.getSaveDepth(), 0, 'Canvas save/restore 深度必须归零');
-  console.log('✓ 全部仓库模块自动化回归测试通过！（含第二轮 6 项试玩专项优化 + 第一轮 8 项改进 + 全玩法回归）');
+  console.log('✓ 全部仓库模块自动化回归测试通过！（含手机端 UI 优化 + 全部玩法与平衡回归）');
 })();

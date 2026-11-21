@@ -80,13 +80,19 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
+}
+
+.brand-group {
+  min-width: 0;
 }
 
 .brand-title-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .brand-group h1 {
@@ -95,6 +101,7 @@ body {
   letter-spacing: -0.02em;
   line-height: 1.2;
   color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .mode-badge {
@@ -108,6 +115,8 @@ body {
   background-color: hsla(356, 68%, 24%, 0.7);
   border: 1px solid hsla(356, 90%, 60%, 0.65);
   line-height: 1.25;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .mode-badge.easy {
@@ -130,6 +139,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .icon-btn {
@@ -141,6 +151,7 @@ body {
   padding: 7px 11px;
   font-size: 0.8125rem;
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
   box-shadow: var(--shadow-key);
   transition: background-color 0.15s ease, transform 0.08s ease, box-shadow 0.08s ease;
@@ -1320,12 +1331,49 @@ kbd {
 
 @media (max-width: 440px) {
   .game-shell {
-    padding: 14px;
-    gap: 10px;
+    padding: 12px;
+    gap: 9px;
+  }
+
+  .brand-group h1 {
+    font-size: 1.08rem;
+  }
+
+  .header-actions {
+    gap: 6px;
+  }
+
+  .icon-btn {
+    padding: 6px 9px;
+    font-size: 0.78rem;
   }
 
   .stats-bar {
     grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+  }
+
+  .stat-item {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 9px;
+    gap: 6px;
+  }
+
+  .stat-item.stat-lives,
+  .stat-item.stat-score {
+    border-color: var(--border-strong);
+    background-color: hsla(152, 14%, 13%, 0.96);
+  }
+
+  .stat-value {
+    font-size: 0.92rem;
+  }
+
+  .stat-value.lives {
+    font-size: 0.82rem;
+    letter-spacing: 0.02em;
   }
 
   .controls-section {

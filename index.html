@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>魔改贪吃蛇 · 肉鸽强化与关卡版</title>
-  <meta name="description" content="融合三选一肉鸽强化、随机限时道具、生命值与动态关卡岩石障碍的进阶贪吃蛇游戏。" />
+  <title>星陨贪吃蛇 · 肉鸽闯关版</title>
+  <meta name="description" content="融合三选一肉鸽强化、随机限时道具、生命值与动态关卡岩石障碍的星陨贪吃蛇闯关游戏。" />
   <link rel="stylesheet" href="./index.css" />
 </head>
 <body>
-  <main class="game-shell" aria-label="贪吃蛇游戏主界面">
+  <main class="game-shell" aria-label="星陨贪吃蛇游戏主界面">
     <header class="game-header">
       <div class="brand-group">
         <div class="brand-title-row">
-          <h1>经典贪吃蛇 · 进阶版</h1>
+          <h1>星陨贪吃蛇</h1>
           <span id="mode-badge" class="mode-badge hidden">🔥 困难</span>
         </div>
         <p class="brand-subtitle">收集道具突破 20 关，每逢 3 关解锁专属强化</p>
@@ -24,21 +24,21 @@
     </header>
 
     <section class="stats-bar" aria-label="游戏计分板">
-      <div class="stat-item">
-        <span class="stat-label">生命值</span>
-        <span id="lives-value" class="stat-value lives">♥♥♥</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">当前得分</span>
-        <span id="score-value" class="stat-value accent">0</span>
-      </div>
-      <div class="stat-item">
+      <div class="stat-item stat-level">
         <span class="stat-label">当前关卡</span>
         <span id="level-value" class="stat-value">Lv.1</span>
       </div>
-      <div class="stat-item">
+      <div class="stat-item stat-best">
         <span class="stat-label">最高纪录</span>
         <span id="best-score-value" class="stat-value">0</span>
+      </div>
+      <div class="stat-item stat-lives">
+        <span class="stat-label">生命值</span>
+        <span id="lives-value" class="stat-value lives">♥♥♥</span>
+      </div>
+      <div class="stat-item stat-score">
+        <span class="stat-label">当前得分</span>
+        <span id="score-value" class="stat-value accent">0</span>
       </div>
     </section>
 

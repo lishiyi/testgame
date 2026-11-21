@@ -1297,11 +1297,11 @@ function buildShareText() {
   const modePrefix = difficulty === 'hard'
     ? '[困难模式] '
     : (difficulty === 'easy' ? '[简单模式] ' : '');
-  let statusLine = `🐍 贪吃蛇·肉鸽挑战｜${modePrefix}闯关至 Lv.${level}`;
+  let statusLine = `🐍 星陨贪吃蛇｜${modePrefix}闯关至 Lv.${level}`;
   if (state === 'won') {
-    statusLine = `🐍 贪吃蛇·肉鸽挑战｜${modePrefix}恭喜通关！(Lv.${level})`;
+    statusLine = `🐍 星陨贪吃蛇｜${modePrefix}恭喜通关！(Lv.${level})`;
   } else if (endlessMode) {
-    statusLine = `🐍 贪吃蛇·肉鸽挑战｜${modePrefix}无尽模式止步 Lv.${level}（最高 Lv.${bestEndlessLevel}）`;
+    statusLine = `🐍 星陨贪吃蛇｜${modePrefix}无尽模式止步 Lv.${level}（最高 Lv.${bestEndlessLevel}）`;
   }
   const upgradeLine = pickedUpgrades.length > 0
     ? pickedUpgrades.map((u) => u.name).join(' / ')
