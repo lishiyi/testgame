@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>星陨贪吃蛇 · 肉鸽闯关版</title>
   <meta name="description" content="融合三选一肉鸽强化、随机限时道具、生命值与动态关卡岩石障碍的星陨贪吃蛇闯关游戏。" />
   <link rel="stylesheet" href="./index.css" />
@@ -19,7 +19,7 @@
       </div>
       <div class="header-actions">
         <button id="pause-btn" class="icon-btn" type="button" disabled aria-label="暂停或继续游戏">暂停</button>
-        <button id="mute-btn" class="icon-btn" type="button" aria-label="切换音效开关">音效: 开</button>
+        <button id="mute-btn" class="icon-btn mute-btn" type="button" aria-label="切换音效开关（当前开启）" title="切换音效"><span class="mute-icon" aria-hidden="true">🔊</span><span class="mute-label">音效: 开</span></button>
       </div>
     </header>
 
@@ -32,7 +32,7 @@
         <span class="stat-label">最高纪录</span>
         <span id="best-score-value" class="stat-value">0</span>
       </div>
-      <div class="stat-item stat-lives">
+      <div id="stat-lives-card" class="stat-item stat-lives">
         <span class="stat-label">生命值</span>
         <span id="lives-value" class="stat-value lives">♥♥♥</span>
       </div>
@@ -56,7 +56,11 @@
       </div>
     </section>
 
-    <div class="legend-wrap">
+    <div id="legend-wrap" class="legend-wrap mobile-collapsed">
+      <button id="legend-toggle-btn" class="legend-toggle-btn" type="button" aria-expanded="false" aria-controls="item-legend">
+        <span id="legend-toggle-text">道具图鉴 · 已解锁 1/9</span>
+        <span class="legend-toggle-arrow" aria-hidden="true">▾</span>
+      </button>
       <section id="item-legend" class="item-legend" aria-label="道具解锁图鉴"></section>
       <div id="legend-popover" class="legend-popover hidden" role="status" aria-live="polite"></div>
     </div>
@@ -100,7 +104,7 @@
 
         <!-- 首次开局核心机制速览 -->
         <div id="overlay-tips" class="overlay-tips">
-          <div class="tip-row"><span class="tip-icon lives">♥</span><span>撞墙扣 1 命并自动顺墙转向+短暂无敌；开盾可主动撞石连击，点击上方道具图鉴可查说明</span></div>
+          <div class="tip-row"><span class="tip-icon lives">♥</span><span>撞墙扣 1 命并自动顺墙转向+短暂无敌；开盾可主动撞石连击，点击道具图鉴可查说明</span></div>
           <div class="tip-row"><span class="tip-icon warn">!</span><span>Lv.3 起定时落石（满额移石）；标准 Lv.15 / 困难 Lv.10 提前激活场地词缀</span></div>
           <div class="tip-row"><span class="tip-icon rare">✦</span><span>每 3 关三选一（每局可重随 1 次，Lv.12+/宝箱高阶概率 ×1.5），选完透视棋盘按方向即开跑</span></div>
         </div>
@@ -125,7 +129,12 @@
         <span><kbd>Space</kbd> 暂停 / 继续 · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 选强化 · <kbd>R</kbd> 重随</span>
       </div>
 
-      <div class="dpad" role="group" aria-label="方向控制键">
+      <div class="mobile-control-bar">
+        <span id="mobile-control-hint" class="mobile-control-hint">支持全屏滑动或下方按键控蛇</span>
+        <button id="dpad-toggle-btn" class="dpad-toggle-btn" type="button" aria-pressed="true">隐藏方向键</button>
+      </div>
+
+      <div id="dpad" class="dpad" role="group" aria-label="方向控制键">
         <button id="dpad-up" class="dpad-btn" type="button" aria-label="向上">▲</button>
         <button id="dpad-left" class="dpad-btn" type="button" aria-label="向左">◀</button>
         <button id="dpad-down" class="dpad-btn" type="button" aria-label="向下">▼</button>

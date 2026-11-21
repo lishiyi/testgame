@@ -39,6 +39,7 @@ const HITSTOP_DURATION = 0.045;     // 拾取道具瞬间微顿帧时长 (秒)
 const STORAGE_KEY = 'classic_snake_best_score_v2';
 const ENDLESS_LEVEL_STORAGE_KEY = 'classic_snake_best_endless_lv_v1';
 const HARD_CLEAR_STORAGE_KEY = 'classic_snake_hard_clears_v1';
+const DPAD_VISIBLE_STORAGE_KEY = 'classic_snake_dpad_visible_v1';
 
 // 开局难度模式配置（简单 / 标准 / 困难；默认标准模式）
 const DIFFICULTY_CONFIG = {
@@ -359,6 +360,24 @@ function loadHardClearCount() {
 function saveHardClearCount(value) {
   try {
     localStorage.setItem(HARD_CLEAR_STORAGE_KEY, String(value));
+  } catch {
+    // 忽略存储异常
+  }
+}
+
+function loadDpadVisible() {
+  try {
+    const saved = localStorage.getItem(DPAD_VISIBLE_STORAGE_KEY);
+    if (saved === null) return true;
+    return saved !== '0';
+  } catch {
+    return true;
+  }
+}
+
+function saveDpadVisible(visible) {
+  try {
+    localStorage.setItem(DPAD_VISIBLE_STORAGE_KEY, visible ? '1' : '0');
   } catch {
     // 忽略存储异常
   }

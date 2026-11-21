@@ -1,8 +1,9 @@
 // ==========================================
-// 经典贪吃蛇 · 进阶版（核心状态机、道具解锁与肉鸽强化控制）
+// 星陨贪吃蛇（核心状态机、道具解锁与肉鸽强化控制）
 // ==========================================
 
 // DOM 元素引用
+const statLivesCardEl = document.getElementById('stat-lives-card');
 const livesEl = document.getElementById('lives-value');
 const scoreEl = document.getElementById('score-value');
 const levelEl = document.getElementById('level-value');
@@ -17,6 +18,9 @@ const nextLevelHintEl = document.getElementById('next-level-hint');
 const nextUpgradeHintEl = document.getElementById('next-upgrade-hint');
 const snakeLenEl = document.getElementById('snake-len-value');
 const levelProgressFillEl = document.getElementById('level-progress-fill');
+const legendWrapEl = document.getElementById('legend-wrap');
+const legendToggleBtn = document.getElementById('legend-toggle-btn');
+const legendToggleTextEl = document.getElementById('legend-toggle-text');
 const itemLegendEl = document.getElementById('item-legend');
 const legendPopoverEl = document.getElementById('legend-popover');
 const buffBarEl = document.getElementById('buff-bar');
@@ -37,6 +41,9 @@ const startBtn = document.getElementById('start-btn');
 const shareBtn = document.getElementById('share-btn');
 const pauseBtn = document.getElementById('pause-btn');
 const muteBtn = document.getElementById('mute-btn');
+const dpadEl = document.getElementById('dpad');
+const dpadToggleBtn = document.getElementById('dpad-toggle-btn');
+const mobileControlHintEl = document.getElementById('mobile-control-hint');
 
 // 游戏核心状态
 let state = 'idle'; // 'idle' | 'running' | 'paused' | 'choosing' | 'gameover' | 'won'
@@ -111,6 +118,8 @@ let pickedUpgrades = [];       // Array<{ name, rarity }>
 let isPostUpgradeReady = false; // 是否处于选完强化后的棋盘透视准备态
 let activeLegendItem = null;
 let legendPopoverTimeout = null;
+let legendExpandedOnMobile = false;
+let dpadVisible = loadDpadVisible();
 let runElapsedSec = 0;
 let rocksSmashed = 0;
 let damageStats = { wall: 0, rock: 0, self: 0 }; // 受击分类统计
@@ -641,11 +650,31 @@ function showLegendPopover(type) {
   }, 4000);
 }
 
+function syncLegendToggleUI() {
+  if (legendWrapEl) {
+    legendWrapEl.classList.toggle('mobile-collapsed', !legendExpandedOnMobile);
+  }
+  if (legendToggleBtn && typeof legendToggleBtn.setAttribute === 'function') {
+    legendToggleBtn.setAttribute('aria-expanded', legendExpandedOnMobile ? 'true' : 'false');
+  }
+}
+
+function toggleMobileLegend() {
+  legendExpandedOnMobile = !legendExpandedOnMobile;
+  if (!legendExpandedOnMobile) {
+    hideLegendPopover();
+  }
+  syncLegendToggleUI();
+}
+
 function renderLegend() {
   if (!itemLegendEl) return;
-  const html = Object.entries(POWERUP_TYPES)
+  const entries = Object.entries(POWERUP_TYPES);
+  let unlockedCount = 0;
+  const html = entries
     .map(([key, cfg]) => {
       const unlocked = level >= cfg.unlockLevel;
+      if (unlocked) unlockedCount++;
       const isActive = activeLegendItem === key;
       return `<button type="button" class="legend-chip ${unlocked ? '' : 'locked'}${isActive ? ' active' : ''}" data-item="${key}" title="Lv.${cfg.unlockLevel} 解锁：${cfg.label} — ${cfg.desc}">
         <i class="dot ${cfg.dotClass}"></i>
@@ -655,6 +684,9 @@ function renderLegend() {
     })
     .join('');
   itemLegendEl.innerHTML = html;
+  if (legendToggleTextEl) {
+    legendToggleTextEl.textContent = `道具图鉴 · 已解锁 ${unlockedCount}/${entries.length}`;
+  }
 }
 
 function createInitialObstacles() {
@@ -1437,6 +1469,9 @@ function showOverlay(title, desc, btnText, { showTips = false, showPauseUpgrades
 
 function updateHUD() {
   livesEl.textContent = '♥'.repeat(lives) + '♡'.repeat(Math.max(0, maxLives - lives));
+  if (statLivesCardEl) {
+    statLivesCardEl.classList.toggle('low-hp', lives === 1 && state !== 'gameover');
+  }
   scoreEl.textContent = String(score);
   levelEl.textContent = endlessMode ? `Lv.${level} ∞` : `Lv.${level}`;
   bestScoreEl.textContent = String(bestScore);
@@ -2340,6 +2375,10 @@ endlessBtn.addEventListener('click', continueEndlessMode);
 shareBtn.addEventListener('click', copyShareStats);
 pauseBtn.addEventListener('click', togglePause);
 
+if (legendToggleBtn) {
+  legendToggleBtn.addEventListener('click', toggleMobileLegend);
+}
+
 if (itemLegendEl) {
   itemLegendEl.addEventListener('click', (e) => {
     const target = e && e.target;
@@ -2353,16 +2392,54 @@ if (itemLegendEl) {
 document.addEventListener('click', (e) => {
   if (!activeLegendItem) return;
   const target = e && e.target;
-  if (target && typeof target.closest === 'function' && (target.closest('#item-legend') || target.closest('#legend-popover'))) {
+  if (target && typeof target.closest === 'function' && (target.closest('#item-legend') || target.closest('#legend-popover') || target.closest('#legend-toggle-btn'))) {
     return;
   }
   hideLegendPopover();
 });
 
+function syncMuteButton() {
+  if (!muteBtn) return;
+  const icon = soundEnabled ? '🔊' : '🔇';
+  const label = soundEnabled ? '音效: 开' : '音效: 关';
+  muteBtn.innerHTML = `<span class="mute-icon" aria-hidden="true">${icon}</span><span class="mute-label">${label}</span>`;
+  if (typeof muteBtn.setAttribute === 'function') {
+    muteBtn.setAttribute('aria-label', soundEnabled ? '切换音效开关（当前开启）' : '切换音效开关（当前关闭）');
+  }
+}
+
 muteBtn.addEventListener('click', () => {
   soundEnabled = !soundEnabled;
-  muteBtn.textContent = soundEnabled ? '音效: 开' : '音效: 关';
+  syncMuteButton();
 });
+
+function syncDpadVisibility() {
+  if (dpadEl) {
+    dpadEl.classList.toggle('dpad-hidden', !dpadVisible);
+  }
+  if (dpadToggleBtn) {
+    dpadToggleBtn.textContent = dpadVisible ? '隐藏方向键' : '显示方向键';
+    dpadToggleBtn.classList.toggle('is-off', !dpadVisible);
+    if (typeof dpadToggleBtn.setAttribute === 'function') {
+      dpadToggleBtn.setAttribute('aria-pressed', dpadVisible ? 'true' : 'false');
+    }
+  }
+  if (mobileControlHintEl) {
+    mobileControlHintEl.textContent = dpadVisible
+      ? '支持全屏滑动或下方按键控蛇'
+      : '纯滑屏模式 · 全屏任意位置滑动转向';
+  }
+}
+
+function toggleDpadVisibility() {
+  dpadVisible = !dpadVisible;
+  saveDpadVisible(dpadVisible);
+  syncDpadVisibility();
+}
+
+if (dpadToggleBtn) {
+  dpadToggleBtn.addEventListener('click', toggleDpadVisibility);
+}
 
 function bindDpadButton(id, dir) {
   const btn = document.getElementById(id);
@@ -2461,5 +2538,8 @@ document.addEventListener('touchcancel', () => {
   touchSwiped = false;
 }, { passive: true });
 
+syncMuteButton();
+syncLegendToggleUI();
+syncDpadVisibility();
 initGameData();
 requestAnimationFrame(gameLoop);

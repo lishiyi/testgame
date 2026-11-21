@@ -217,6 +217,7 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     loadBestScore,
     loadBestEndlessLevel,
     loadHardClearCount,
+    loadDpadVisible,
     setDifficulty,
     getRocksForLevel,
     getRockDripInterval,
@@ -229,6 +230,9 @@ const combinedRepoCode = '"use strict";\n' + scriptPaths
     getInstantAegisProfile,
     showLegendPopover,
     hideLegendPopover,
+    toggleMobileLegend,
+    toggleDpadVisibility,
+    syncMuteButton,
     registerRocksSmashed,
     applyPowerUp,
     takeDamage,
@@ -1777,7 +1781,53 @@ assert(env.getEl('mode-hard-btn').textContent.includes('🏅'), '困难通关后
     '计分板中生命值与当前得分应排在当前关卡与最高纪录之后（手机 2×2 布局下位于更靠近棋盘的下方行）'
   );
 
+  // 16g. 手机端 5 项进阶 UI 优化校验（图鉴折叠与解锁数、方向键显示切换持久化、1 血呼吸预警、弹窗防裁切、结算 2×2 与安全区）
+  assert(indexHtml.includes('viewport-fit=cover'), 'viewport 应包含 viewport-fit=cover 以支持底部安全区');
+  assert(/env\(safe-area-inset-bottom\)/.test(indexCss), 'index.css 应配置 env(safe-area-inset-bottom) 底部安全区留白');
+  assert(/\.upgrade-overlay\s*\{[\s\S]*?overflow-y:\s*auto;/.test(indexCss), '.upgrade-overlay 应支持 overflow-y: auto 防止小屏裁切');
+  assert(/\.board-overlay\s*\{[\s\S]*?overflow-y:\s*auto;/.test(indexCss), '.board-overlay 应支持 overflow-y: auto 防止小屏裁切');
+  assert(/@media\s*\(max-width:\s*480px\)[\s\S]*?\.summary-metrics\s*\{[\s\S]*?repeat\(2,/.test(indexCss), '手机端结算指标应切换为 2×2 网格');
+  assert(/@media\s*\(max-width:\s*480px\)[\s\S]*?\.legend-wrap\s*\{\s*order:\s*7;\s*\}/.test(indexCss), '手机端道具图鉴应通过 order 移至棋盘与方向键下方');
+
+  // 折叠图鉴切换与解锁计数
+  g.startGame();
+  assert.strictEqual(env.getEl('legend-wrap').classList.contains('mobile-collapsed'), true, '手机端道具图鉴默认应折叠');
+  assert.strictEqual(env.getEl('legend-toggle-text').textContent, '道具图鉴 · 已解锁 1/9');
+  g.toggleMobileLegend();
+  assert.strictEqual(env.getEl('legend-wrap').classList.contains('mobile-collapsed'), false, '点击图鉴折叠栏应展开图鉴');
+  g.showLegendPopover('gold');
+  g.toggleMobileLegend();
+  assert.strictEqual(env.getEl('legend-wrap').classList.contains('mobile-collapsed'), true, '再次点击应收起图鉴');
+  assert.strictEqual(env.getEl('legend-popover').classList.contains('hidden'), true, '收起图鉴时应同步关闭道具说明浮层');
+
+  // 方向键显示/纯滑屏模式切换与持久化
+  assert.strictEqual(g.loadDpadVisible(), true, '默认显示方向键');
+  assert.strictEqual(env.getEl('dpad').classList.contains('dpad-hidden'), false);
+  g.toggleDpadVisibility();
+  assert.strictEqual(g.loadDpadVisible(), false, '切换纯滑屏模式应持久化至 localStorage');
+  assert.strictEqual(env.getEl('dpad').classList.contains('dpad-hidden'), true);
+  assert.strictEqual(env.getEl('dpad-toggle-btn').textContent, '显示方向键');
+  g.toggleDpadVisibility();
+  assert.strictEqual(g.loadDpadVisible(), true);
+  assert.strictEqual(env.getEl('dpad').classList.contains('dpad-hidden'), false);
+  assert.strictEqual(env.getEl('dpad-toggle-btn').textContent, '隐藏方向键');
+
+  // 1 滴血残血呼吸预警
+  g.startGame();
+  g.setTestState({ lives: 2 });
+  g.updateHUD();
+  assert.strictEqual(env.getEl('stat-lives-card').classList.contains('low-hp'), false, '生命 >1 时不应触发残血预警');
+  g.setTestState({ lives: 1 });
+  g.updateHUD();
+  assert.strictEqual(env.getEl('stat-lives-card').classList.contains('low-hp'), true, '生命降为 1 时应点亮 low-hp 呼吸预警');
+  g.setTestState({ lives: 0, state: 'gameover' });
+  g.updateHUD();
+  assert.strictEqual(env.getEl('stat-lives-card').classList.contains('low-hp'), false, '游戏结束后应关闭残血预警');
+
+  // 静音按钮响应式图标+文字结构
+  assert(env.getEl('mute-btn').innerHTML.includes('mute-icon') && env.getEl('mute-btn').innerHTML.includes('音效: 开'));
+
   g.gameLoop(1500);
   assert.strictEqual(env.getSaveDepth(), 0, 'Canvas save/restore 深度必须归零');
-  console.log('✓ 全部仓库模块自动化回归测试通过！（含手机端 UI 优化 + 全部玩法与平衡回归）');
+  console.log('✓ 全部仓库模块自动化回归测试通过！（含全部手机端单屏 UI 优化 + 玩法与平衡回归）');
 })();
